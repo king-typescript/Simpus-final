@@ -1,10 +1,14 @@
 import { motion } from 'framer-motion';
 import { FaBullhorn } from 'react-icons/fa6';
-import { pengumumanInfo } from '../../data/mockData';
 import { useAuth } from '../../../lib/auth.jsx';
 
 export default function WelcomeBanner() {
   const { user } = useAuth();
+  const todayFormatted = new Date().toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
   
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
@@ -18,7 +22,7 @@ export default function WelcomeBanner() {
           Selamat datang kembali, <span className="text-primary-blue">{user?.name || 'Siswa'}</span>!
         </h2>
         <p className="text-text-sekunder mt-2 text-sm sm:text-base font-normal">
-          Ini adalah ringkasan keanggotaan perpustakaanmu per tanggal <span className="font-semibold text-text-utama">{pengumumanInfo.tanggal}</span>.
+          Ini adalah ringkasan keanggotaan perpustakaanmu per tanggal <span className="font-semibold text-text-utama">{todayFormatted}</span>.
         </p>
       </motion.div>
 
@@ -35,10 +39,10 @@ export default function WelcomeBanner() {
           </span>
         </div>
         <h3 className="font-bold text-base sm:text-lg mb-1.5 relative z-10 text-white">
-          {pengumumanInfo.judul}
+          Layanan Sirkulasi Aktif
         </h3>
         <p className="text-xs sm:text-sm text-light-blue/90 relative z-10 leading-relaxed font-normal">
-          {pengumumanInfo.pesan}
+          Peminjaman dan pengembalian buku dapat dilakukan secara langsung di meja sirkulasi perpustakaan.
         </p>
       </motion.div>
     </div>

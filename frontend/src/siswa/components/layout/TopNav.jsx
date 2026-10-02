@@ -4,7 +4,6 @@ import { FiMenu, FiX, FiLogOut } from 'react-icons/fi';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../../lib/auth.jsx';
 import gambarHeader from '../../../assets/image/siswa/satak.png';
-import { siswaData } from '../../data/mockData';
 
 const navItems = [
   { path: '/siswa', label: 'Dashboard' },
@@ -87,8 +86,8 @@ export default function TopNav() {
         {/* Right Section: User Profile & Mobile Toggle */}
         <div className="flex items-center space-x-2 sm:space-x-3">
           <div className="hidden sm:block text-right">
-            <p className="text-sm font-bold text-text-utama leading-tight">{user?.name || siswaData.namaPanggilan}</p>
-            <p className="text-[11px] text-text-sekunder font-mono">{user?.nis || siswaData.nisn}</p>
+            <p className="text-sm font-bold text-text-utama leading-tight">{user?.name || 'Siswa'}</p>
+            <p className="text-[11px] text-text-sekunder font-mono">{user?.nis || '-'}</p>
           </div>
 
           <button
@@ -99,7 +98,7 @@ export default function TopNav() {
             title="Lihat Profil Saya"
           >
             <img
-              src={user?.name ? `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=102E68&color=fff` : siswaData.avatar}
+              src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'Siswa')}&background=102E68&color=fff`}
               alt="Profil"
               className="w-full h-full object-cover"
             />

@@ -11,6 +11,7 @@ import { lazy, Suspense } from 'react'
 import { Route, Routes, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { AuthProvider } from './lib/auth.jsx'
+import ProtectedRoute from './components/common/ProtectedRoute.jsx'
 
 // --- Halaman Publik (Landing Page & Otentikasi) ---
 const Landing = lazy(() => import('./pages/Landing.jsx'))
@@ -81,7 +82,14 @@ export default function App() {
           {/* ===================================================
               2. Rute Admin Perpustakaan
              =================================================== */}
-          <Route path="/admin" element={<AdminLayout />}>
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute allowedRoles={['PUSTAKAWAN']}>
+                <AdminLayout />
+              </ProtectedRoute>
+            }
+          >
             <Route index element={<DashboardAdmin />} />
             <Route path="buku" element={<BukuAdmin />} />
             <Route path="anggota" element={<AnggotaAdmin />} />
@@ -94,7 +102,14 @@ export default function App() {
           {/* ===================================================
               3. Rute Siswa / Peminjam
              =================================================== */}
-          <Route path="/siswa" element={<SiswaLayout />}>
+          <Route
+            path="/siswa"
+            element={
+              <ProtectedRoute allowedRoles={['SISWA']}>
+                <SiswaLayout />
+              </ProtectedRoute>
+            }
+          >
             <Route index element={<DashboardSiswa />} />
             <Route path="katalog" element={<KatalogSiswa />} />
             <Route path="riwayat" element={<RiwayatSiswa />} />

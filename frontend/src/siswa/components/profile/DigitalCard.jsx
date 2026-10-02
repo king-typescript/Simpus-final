@@ -1,14 +1,13 @@
 import { motion } from 'framer-motion';
 import { FiUser, FiCamera } from 'react-icons/fi';
-import { siswaData } from '../../data/mockData';
 import { useAuth } from '../../../lib/auth.jsx';
 
 export default function DigitalCard() {
   const { user } = useAuth();
-  const displayName = user?.name || siswaData.nama;
-  const displayNis = user?.nis || siswaData.nisn;
+  const displayName = user?.name || 'Siswa Perpustakaan';
+  const displayNis = user?.nis || '-';
   const displayCardNumber = user?.libraryCardNumber || displayNis;
-  const avatarUrl = user?.name ? `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=102E68&color=fff` : siswaData.avatar;
+  const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=102E68&color=fff`;
 
   return (
     <motion.div
@@ -68,7 +67,7 @@ export default function DigitalCard() {
       {/* Status Badge */}
       <div className="mt-3 sm:mt-4 flex items-center space-x-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-2 w-full justify-center">
         <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-        <span className="text-xs font-semibold text-white/90">Keanggotaan {siswaData.status}</span>
+        <span className="text-xs font-semibold text-white/90">Keanggotaan {user?.status || 'Aktif'}</span>
       </div>
     </motion.div>
   );

@@ -10,7 +10,6 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FiClock } from 'react-icons/fi';
 import RiwayatItem from '../../siswa/components/riwayat/RiwayatItem';
-import { daftarRiwayat } from '../../siswa/data/mockData';
 import { AuthService } from '../../services/api';
 
 // Varian animasi list container

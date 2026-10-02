@@ -1,8 +1,7 @@
 import { motion } from 'framer-motion';
 import { FiBook } from 'react-icons/fi';
-import { bukuAktifDipinjam } from '../../data/mockData';
 
-export default function ActiveLoansCard({ bukuList = bukuAktifDipinjam }) {
+export default function ActiveLoansCard({ bukuList = [] }) {
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
       <div className="p-5 sm:p-6 border-b border-gray-100 flex justify-between items-center">

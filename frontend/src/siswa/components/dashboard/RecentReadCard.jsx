@@ -1,8 +1,7 @@
 import { motion } from 'framer-motion';
 import { FiCheckCircle, FiBook } from 'react-icons/fi';
-import { bukuSelesaiDibaca } from '../../data/mockData';
 
-export default function RecentReadCard({ buku = bukuSelesaiDibaca[0] }) {
+export default function RecentReadCard({ buku = null }) {
   if (!buku) return null;
 
   return (

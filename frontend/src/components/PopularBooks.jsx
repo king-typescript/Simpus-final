@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Search } from 'lucide-react'
 import { BookService } from '../services/api.js'
-import { popularBooks as fallbackBooks, CATEGORIES } from '../data/books.js'
 import BookCard from './BookCard.jsx'
+
+const CATEGORIES = ['Semua Kategori', 'Pengembangan Diri', 'Filsafat', 'Psikologi', 'Sains & Teknologi', 'Fiksi', 'Sejarah', 'Pendidikan']
 
 export default function PopularBooks() {
   const [query, setQuery] = useState('')
@@ -32,7 +33,7 @@ export default function PopularBooks() {
 
         if (isMounted) {
           const raw = res.data?.data || res.data || []
-          const mapped = Array.isArray(raw) && raw.length > 0 ? raw.map((b) => ({
+          const mapped = Array.isArray(raw) ? raw.map((b) => ({
             id: b.id,
             title: b.title,
             category: typeof b.category === 'object' ? b.category?.name : b.category,
@@ -45,17 +46,12 @@ export default function PopularBooks() {
             cover: b.coverUrl || b.cover || null,
             color: b.color || '#E3EEFB',
             accent: b.accent || '#1D5FAE',
-          })) : fallbackBooks
-          setBooks(mapped.length > 0 ? mapped : fallbackBooks)
+          })) : []
+          setBooks(mapped)
         }
       } catch (err) {
         if (isMounted) {
-          const filtered = fallbackBooks.filter((book) => {
-            const matchesQuery = book.title.toLowerCase().includes(query.toLowerCase())
-            const matchesCategory = category === 'Semua Kategori' || book.category === category
-            return matchesQuery && matchesCategory
-          })
-          setBooks(filtered)
+          setBooks([])
         }
       } finally {
         if (isMounted) setLoading(false)

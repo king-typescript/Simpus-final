@@ -3,15 +3,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FiCheckCircle, FiCheck, FiMail, FiPhone, FiHome, FiLock, FiLogOut } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../lib/auth.jsx';
-import { siswaData } from '../../data/mockData';
 
 export default function ProfileForm() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [formData, setFormData] = useState({
-    email: siswaData.email,
-    telepon: user?.phone || siswaData.telepon,
-    alamat: siswaData.alamat,
+    email: user?.email || '',
+    telepon: user?.phone || '',
+    alamat: user?.address || '',
   });
 
   const [saved, setSaved] = useState(false);
@@ -50,7 +49,7 @@ export default function ProfileForm() {
             </label>
             <input
               type="text"
-              value={user?.name || siswaData.nama}
+              value={user?.name || '-'}
               readOnly
               className="w-full px-4 py-2.5 bg-gray-50 text-gray-500 rounded-2xl border border-gray-200 cursor-not-allowed text-xs sm:text-sm font-medium"
             />
@@ -62,7 +61,7 @@ export default function ProfileForm() {
             </label>
             <input
               type="text"
-              value={user?.nis || siswaData.nisn}
+              value={user?.nis || '-'}
               readOnly
               className="w-full px-4 py-2.5 bg-gray-50 text-gray-500 rounded-2xl border border-gray-200 cursor-not-allowed text-xs sm:text-sm font-medium"
             />
@@ -74,7 +73,7 @@ export default function ProfileForm() {
             </label>
             <input
               type="text"
-              value={user?.className || siswaData.kelas}
+              value={user?.className || '-'}
               readOnly
               className="w-full px-4 py-2.5 bg-gray-50 text-gray-500 rounded-2xl border border-gray-200 cursor-not-allowed text-xs sm:text-sm font-medium"
             />
@@ -86,7 +85,7 @@ export default function ProfileForm() {
             </label>
             <input
               type="text"
-              value={siswaData.status}
+              value={user?.status || 'Aktif'}
               readOnly
               className="w-full px-4 py-2.5 bg-gray-50 text-gray-500 rounded-2xl border border-gray-200 cursor-not-allowed text-xs sm:text-sm font-medium"
             />

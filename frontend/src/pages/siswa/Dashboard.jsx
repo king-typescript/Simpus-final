@@ -14,7 +14,6 @@ import ActiveLoansCard from '../../siswa/components/dashboard/ActiveLoansCard';
 import RecentReadCard from '../../siswa/components/dashboard/RecentReadCard';
 import NewCollectionCard from '../../siswa/components/dashboard/NewCollectionCard';
 import QuickActionsCard from '../../siswa/components/dashboard/QuickActionsCard';
-import { statistikSiswa } from '../../siswa/data/mockData';
 import { AuthService } from '../../services/api';
 
 // Konfigurasi animasi stagger untuk item dashboard
@@ -28,7 +27,11 @@ const staggerItem = {
 };
 
 export default function DashboardSiswa() {
-  const [stats, setStats] = useState(statistikSiswa);
+  const [stats, setStats] = useState([
+    { id: 'dipinjam', label: 'Sedang Dipinjam', nilai: '0', satuan: 'Buku', tipe: 'warning' },
+    { id: 'selesai', label: 'Riwayat Pinjam', nilai: '0', satuan: 'Buku', tipe: 'success' },
+    { id: 'denda', label: 'Tunggakan Denda', nilai: 'Rp 0', satuan: '', tipe: 'danger' }
+  ]);
   const [activeLoans, setActiveLoans] = useState([]);
 
   useEffect(() => {

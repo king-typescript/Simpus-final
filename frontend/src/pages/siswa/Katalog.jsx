@@ -11,7 +11,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import BookCard from '../../siswa/components/BookCard';
 import CatalogHeader from '../../siswa/components/katalog/CatalogHeader';
 import BookDetailModal from '../../siswa/components/katalog/BookDetailModal';
-import { daftarBukuKatalog } from '../../siswa/data/mockData';
 import { BookService } from '../../services/api';
 
 export default function KatalogSiswa() {
