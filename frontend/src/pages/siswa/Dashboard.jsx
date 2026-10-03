@@ -14,7 +14,7 @@ import ActiveLoansCard from '../../siswa/components/dashboard/ActiveLoansCard';
 import RecentReadCard from '../../siswa/components/dashboard/RecentReadCard';
 import NewCollectionCard from '../../siswa/components/dashboard/NewCollectionCard';
 import QuickActionsCard from '../../siswa/components/dashboard/QuickActionsCard';
-import { AuthService } from '../../services/api';
+import { DashboardService } from '../../services/api';
 
 // Konfigurasi animasi stagger untuk item dashboard
 const staggerItem = {
@@ -38,7 +38,7 @@ export default function DashboardSiswa() {
     let mounted = true;
     const loadDashboard = async () => {
       try {
-        const res = await AuthService.me();
+        const res = await DashboardService.get();
         if (mounted && res.data?.data) {
           const d = res.data.data;
           setStats([

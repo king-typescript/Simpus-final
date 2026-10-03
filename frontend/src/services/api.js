@@ -1,4 +1,4 @@
-import api from '../lib/api.js'
+import api, { saveAuthToken, clearAuthToken } from '../lib/api.js'
 
 export const BookService = {
   getPopular: () => api.get('/buku', { params: { limit: 8, status: 'TERSEDIA' } }),
@@ -16,7 +16,12 @@ export const CategoryService = {
 export const AuthService = {
   login: (credentials) => api.post('/auth/login', credentials),
   logout: () => api.post('/auth/logout'),
-  me: () => api.get('/dashboard'),
+  me: () => api.get('/auth/me'),
+  getDashboard: () => api.get('/dashboard'),
+}
+
+export const DashboardService = {
+  get: () => api.get('/dashboard'),
 }
 
 export const MemberService = {
@@ -43,5 +48,5 @@ export const LibrarySettingService = {
   get: () => api.get('/pengaturan/perpustakaan'),
 }
 
+export { saveAuthToken, clearAuthToken }
 export default api
-

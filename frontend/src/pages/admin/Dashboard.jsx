@@ -11,7 +11,7 @@ import Statcard from "../../admin/components/Statcard";
 import { WeeklyChart } from "../../admin/components/dashboard/WeeklyChart";
 import { RecentActivity } from "../../admin/components/dashboard/RecentActivity";
 import { QuickActions } from "../../admin/components/dashboard/QuickActions";
-import { AuthService } from "../../services/api";
+import { DashboardService } from "../../services/api";
 
 const initialStatistics = [
   {
@@ -105,7 +105,7 @@ function Dashboard() {
     let mounted = true;
     const fetchDashboardData = async () => {
       try {
-        const res = await AuthService.me();
+        const res = await DashboardService.get();
         if (mounted && res.data?.data) {
           const d = res.data.data;
           setStats([

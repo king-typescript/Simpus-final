@@ -89,6 +89,7 @@ export async function POST(request: Request) {
           name: user.name,
           role: user.role,
         },
+        token, // Added token for fallback authorization Header
       },
       { headers: noStoreHeaders },
     );

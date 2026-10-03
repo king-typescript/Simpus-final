@@ -39,6 +39,14 @@ function isOriginAllowed(request: Request) {
   if (!origin) return true;
   try {
     const reqOrigin = new URL(request.url).origin;
+    
+    // Izinkan semua origin IP lokal untuk testing mobile (format: http://192.168.x.x:5173)
+    if (process.env.NODE_ENV !== "production" || process.env.COOKIE_SECURE === "false") {
+      if (origin.startsWith("http://192.168.") || origin.startsWith("http://10.") || origin.startsWith("http://172.")) {
+        return true;
+      }
+    }
+
     const allowed = [
       reqOrigin,
       process.env.FRONTEND_URL,

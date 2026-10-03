@@ -22,6 +22,7 @@ export function MemberModal({
   form,
   onChange,
   onSubmit,
+  submitting = false,
 }) {
   return (
     <Modal
@@ -41,6 +42,7 @@ export function MemberModal({
             value={form.nis}
             onChange={onChange}
             placeholder="20260001"
+            required
             className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs sm:text-sm outline-none focus:border-blue-500"
           />
         </div>
@@ -54,6 +56,7 @@ export function MemberModal({
             value={form.name}
             onChange={onChange}
             placeholder="Nama siswa"
+            required
             className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs sm:text-sm outline-none focus:border-blue-500"
           />
         </div>
@@ -67,6 +70,7 @@ export function MemberModal({
               name="className"
               value={form.className}
               onChange={onChange}
+              required
               className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs sm:text-sm outline-none focus:border-blue-500"
             >
               <option value="">Pilih kelas</option>
@@ -92,6 +96,25 @@ export function MemberModal({
           </div>
         </div>
 
+        {!selectedMember && (
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-700">
+              Password Akun Siswa (Opsional)
+            </label>
+            <input
+              type="password"
+              name="password"
+              value={form.password || ""}
+              onChange={onChange}
+              placeholder="Default: passwordSiswa123 (min 12 karakter)"
+              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs sm:text-sm outline-none focus:border-blue-500"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">
+              Jika dikosongkan, password default adalah <code>passwordSiswa123</code>.
+            </p>
+          </div>
+        )}
+
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-700">
             Status
@@ -111,15 +134,17 @@ export function MemberModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            disabled={submitting}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
           >
             Batal
           </button>
           <button
             type="submit"
-            className="rounded-xl bg-blue-600 px-5 py-2 text-xs font-semibold text-white hover:bg-blue-700 active:scale-95"
+            disabled={submitting}
+            className="rounded-xl bg-blue-600 px-5 py-2 text-xs font-semibold text-white hover:bg-blue-700 active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
           >
-            {selectedMember ? "Simpan Perubahan" : "Tambah Anggota"}
+            {submitting ? "Memproses..." : selectedMember ? "Simpan Perubahan" : "Tambah Anggota"}
           </button>
         </div>
       </form>

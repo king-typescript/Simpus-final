@@ -90,7 +90,10 @@ function Anggota() {
     className: "",
     phone: "",
     status: "Aktif",
+    password: "",
   });
+
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -148,6 +151,7 @@ function Anggota() {
       className: "",
       phone: "",
       status: "Aktif",
+      password: "",
     });
     setShowModal(true);
   };
@@ -160,6 +164,7 @@ function Anggota() {
       className: member.className,
       phone: member.phone,
       status: member.status,
+      password: "",
     });
     setShowModal(true);
   };
@@ -184,6 +189,12 @@ function Anggota() {
       return;
     }
 
+    if (!selectedMember && form.password && form.password.length < 12) {
+      alert("Password minimal harus 12 karakter.");
+      return;
+    }
+
+    setSubmitting(true);
     try {
       if (selectedMember && typeof selectedMember.id === "string") {
         await MemberService.update(selectedMember.id, {
@@ -196,7 +207,7 @@ function Anggota() {
       } else {
         await MemberService.create({
           username: form.nis,
-          password: "passwordSiswa123",
+          password: form.password ? form.password : "passwordSiswa123",
           nis: form.nis,
           name: form.name,
           className: form.className,
@@ -225,7 +236,13 @@ function Anggota() {
       }
       setShowModal(false);
     } catch (err) {
-      alert(err?.response?.data?.error || "Gagal menyimpan data anggota.");
+      if (err?.response?.status === 401 || err?.response?.status === 403) {
+        alert("Sesi autentikasi telah habis atau tidak memiliki hak akses. Silakan login kembali.");
+      } else {
+        alert(err?.response?.data?.error || "Gagal menyimpan data anggota.");
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -344,6 +361,7 @@ function Anggota() {
         form={form}
         onChange={handleChange}
         onSubmit={handleSubmit}
+        submitting={submitting}
       />
 
       {/* Member Card Preview Modal */}

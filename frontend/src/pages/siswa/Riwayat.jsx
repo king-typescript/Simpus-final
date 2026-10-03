@@ -10,7 +10,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FiClock } from 'react-icons/fi';
 import RiwayatItem from '../../siswa/components/riwayat/RiwayatItem';
-import { AuthService } from '../../services/api';
+import { DashboardService } from '../../services/api';
 
 // Varian animasi list container
 const containerVariants = {
@@ -34,7 +34,7 @@ export default function RiwayatSiswa() {
     let mounted = true;
     const loadRiwayat = async () => {
       try {
-        const res = await AuthService.me();
+        const res = await DashboardService.get();
         if (mounted && res.data?.data?.recentLoans) {
           const mapped = res.data.data.recentLoans.map((loan) => {
             const bookTitle = loan.items?.[0]?.copy?.book?.title || 'Buku Perpustakaan';

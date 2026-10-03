@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { AuthService } from '../services/api.js'
+import { AuthService, saveAuthToken, clearAuthToken } from '../services/api.js'
 
 const AuthContext = createContext(null)
 
@@ -22,8 +22,8 @@ export function AuthProvider({ children }) {
         const d = res.data
         if (d?.role) {
           const userObj = d.role === 'SISWA'
-            ? { role: d.role, ...(d.data?.student || {}) }
-            : { role: d.role, name: 'Administrator Perpustakaan' }
+            ? { role: d.role, ...(d.student || {}) }
+            : { role: d.role, name: d.user?.name || 'Administrator Perpustakaan' }
           setUser((prev) => {
             const merged = prev ? { ...prev, ...userObj } : userObj
             localStorage.setItem('simpus_user', JSON.stringify(merged))
@@ -35,6 +35,7 @@ export function AuthProvider({ children }) {
         if (mounted) {
           setUser(null)
           localStorage.removeItem('simpus_user')
+          clearAuthToken()
         }
       })
       .finally(() => {
@@ -48,6 +49,10 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (credentials) => {
     const res = await AuthService.login(credentials)
     const userPayload = res.data?.user ?? null
+    const token = res.data?.token ?? null
+    if (token) {
+      saveAuthToken(token)
+    }
     if (userPayload) {
       setUser(userPayload)
       localStorage.setItem('simpus_user', JSON.stringify(userPayload))
@@ -62,6 +67,7 @@ export function AuthProvider({ children }) {
       // Abaikan error jaringan saat logout
     } finally {
       localStorage.removeItem('simpus_user')
+      clearAuthToken()
       setUser(null)
     }
   }, [])
