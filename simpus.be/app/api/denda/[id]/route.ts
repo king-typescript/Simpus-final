@@ -9,8 +9,8 @@ export const runtime = "nodejs";
 type RouteContext = { params: Promise<{ id: string }> };
 
 const paymentSchema = z.object({
-  receiptNumber: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/, "Nomor kuitansi tidak valid"),
-  amount: z.string().trim().regex(/^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/, "Nominal tidak valid"),
+  receiptNumber: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/, "Nomor kuitansi tidak valid").optional(),
+  amount: z.string().trim().regex(/^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/, "Nominal tidak valid").optional(),
   note: z.string().trim().max(1000, "Catatan maksimal 1000 karakter").nullable().optional(),
 });
 
@@ -167,7 +167,7 @@ export async function POST(request: Request, context: RouteContext) {
     return errorResponse(parseResult.error.issues[0]?.message || "Data pembayaran tidak valid.", 422);
   }
 
-  const { receiptNumber, amount, note = null } = parseResult.data;
+  const { receiptNumber: rawReceiptNumber, amount: rawAmount, note = null } = parseResult.data;
 
   try {
     const result = await serializable(() => prisma.$transaction(async (tx) => {
@@ -177,8 +177,10 @@ export async function POST(request: Request, context: RouteContext) {
       if (fine.payment) throw new Error("PAYMENT_EXISTS");
       if (!fine.loanItem.returnedAt) throw new Error("BOOK_NOT_RETURNED");
 
-      const paymentAmount = new Prisma.Decimal(amount);
+      const paymentAmount = rawAmount ? new Prisma.Decimal(rawAmount) : fine.amount;
       if (!paymentAmount.equals(fine.amount)) throw new Error("AMOUNT_MISMATCH");
+
+      const receiptNumber = rawReceiptNumber || `KW-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
 
       const payment = await tx.finePayment.create({
         data: { fineId: id, receivedById: auth.user.id, amount: paymentAmount, paymentMethod: "CASH", receiptNumber, note: note || null },

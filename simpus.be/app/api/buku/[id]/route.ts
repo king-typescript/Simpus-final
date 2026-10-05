@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { noStoreHeaders, requireAuthenticatedUser, requireLibrarian } from "@/lib/auth";
+import { noStoreHeaders, requireLibrarian } from "@/lib/auth";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -80,25 +80,102 @@ export async function PATCH(request: Request, context: Context) {
     data.publicationYear = body.publicationYear as number | null;
   }
   if ("categoryId" in body) {
-    if (!uuid(body.categoryId)) return errorResponse("Category ID tidak valid.", 422);
-    data.categoryId = body.categoryId;
+    if (body.categoryId !== null && typeof body.categoryId === "string" && uuid(body.categoryId)) {
+      data.categoryId = body.categoryId;
+    }
   }
+
+  const categoryName = typeof body.categoryName === "string" && body.categoryName.trim() ? body.categoryName.trim() : undefined;
+  const authorName = typeof body.authorName === "string" && body.authorName.trim() ? body.authorName.trim() : undefined;
   const authorIds = "authorIds" in body ? body.authorIds : undefined;
   if (authorIds !== undefined && (!Array.isArray(authorIds) || !authorIds.length || authorIds.length > 20 || !authorIds.every(uuid))) return errorResponse("Daftar penulis tidak valid.", 422);
-  if (!Object.keys(data).length && authorIds === undefined) return errorResponse("Tidak ada perubahan.", 422);
+
+  const newStock = typeof body.stock === "number" && Number.isInteger(body.stock) && body.stock >= 0 ? body.stock : undefined;
+
+  if (!Object.keys(data).length && authorIds === undefined && !categoryName && !authorName && newStock === undefined) return errorResponse("Tidak ada perubahan.", 422);
 
   try {
     const updated = await prisma.$transaction(async (tx) => {
-      if (!(await tx.book.findFirst({ where: { id, isActive: true }, select: { id: true } }))) return null;
+      const existingBook = await tx.book.findFirst({ where: { id, isActive: true }, select: { id: true, categoryId: true } });
+      if (!existingBook) return null;
+
+      if (!data.categoryId && categoryName) {
+        const existingCategory = await tx.category.findFirst({
+          where: { name: { equals: categoryName, mode: "insensitive" } },
+        });
+        if (existingCategory) {
+          data.categoryId = existingCategory.id;
+        } else {
+          const createdCat = await tx.category.create({
+            data: {
+              name: categoryName,
+              ddcCode: Math.floor(100 + Math.random() * 900).toString(),
+              isActive: true,
+            },
+          });
+          data.categoryId = createdCat.id;
+        }
+      }
+
       if (data.categoryId && !(await tx.category.findFirst({ where: { id: data.categoryId, isActive: true }, select: { id: true } }))) throw new Error("CATEGORY_NOT_FOUND");
-      const uniqueAuthors = authorIds === undefined ? undefined : [...new Set(authorIds)];
+
+      let uniqueAuthors = authorIds === undefined ? undefined : [...new Set(authorIds)];
+      if (!uniqueAuthors && authorName) {
+        let existingAuthor = await tx.author.findFirst({
+          where: { name: { equals: authorName, mode: "insensitive" } },
+        });
+        if (!existingAuthor) {
+          existingAuthor = await tx.author.create({ data: { name: authorName } });
+        }
+        uniqueAuthors = [existingAuthor.id];
+      }
+
       if (uniqueAuthors) {
         const count = await tx.author.count({ where: { id: { in: uniqueAuthors } } });
         if (count !== uniqueAuthors.length) throw new Error("AUTHOR_NOT_FOUND");
       }
-      const book = await tx.book.update({ where: { id }, data: { ...data, ...(uniqueAuthors ? { authors: { set: uniqueAuthors.map((authorId) => ({ id: authorId })) } } : {}) }, select: detailSelect });
-      await tx.auditLog.create({ data: { userId: auth.user.id, action: "UPDATE", entityType: "Book", entityId: id, newData: jsonValue(book) } });
-      return book;
+
+      await tx.book.update({
+        where: { id },
+        data: {
+          ...data,
+          ...(uniqueAuthors ? { authors: { set: uniqueAuthors.map((authorId) => ({ id: authorId })) } } : {}),
+        },
+        select: detailSelect,
+      });
+
+      if (newStock !== undefined) {
+        const currentCopies = await tx.bookCopy.findMany({
+          where: { bookId: id, isActive: true },
+          select: { id: true, status: true },
+        });
+
+        if (newStock > currentCopies.length) {
+          const countToAdd = newStock - currentCopies.length;
+          const copiesData = Array.from({ length: countToAdd }).map((_, i) => ({
+            bookId: id,
+            barcode: `BC-${Date.now().toString().slice(-6)}-${currentCopies.length + i + 1}`,
+            status: "TERSEDIA" as const,
+            isActive: true,
+            acquiredAt: new Date(),
+          }));
+          await tx.bookCopy.createMany({ data: copiesData });
+        } else if (newStock < currentCopies.length) {
+          const availableCopies = currentCopies.filter((c) => c.status === "TERSEDIA");
+          const countToRemove = currentCopies.length - newStock;
+          const copiesToDeactivate = availableCopies.slice(0, countToRemove);
+          if (copiesToDeactivate.length > 0) {
+            await tx.bookCopy.updateMany({
+              where: { id: { in: copiesToDeactivate.map((c) => c.id) } },
+              data: { isActive: false },
+            });
+          }
+        }
+      }
+
+      const finalBook = await tx.book.findUnique({ where: { id }, select: detailSelect });
+      await tx.auditLog.create({ data: { userId: auth.user.id, action: "UPDATE", entityType: "Book", entityId: id, newData: jsonValue(finalBook) } });
+      return finalBook;
     });
     return updated ? NextResponse.json({ data: updated }, { headers: noStoreHeaders }) : errorResponse("Buku tidak ditemukan.", 404);
   } catch (error: unknown) {

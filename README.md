@@ -1,88 +1,93 @@
 # SIMPUS SATAK — Sistem Informasi & Manajemen Perpustakaan Sekolah
 
-Proyek ini dibangun berdasarkan PRD "Sistem Informasi & Manajemen
-Perpustakaan Sekolah (SIMPUS)" dengan dua bagian terpisah:
+Proyek Sistem Informasi & Manajemen Perpustakaan Sekolah (SIMPUS) berbasis arsitektur terpisah:
 
 ```
-simpus-satak/
-├── frontend/   → React 18 + Vite + Tailwind CSS (landing page & UI)
-└── backend/    → Laravel 11 (REST API, database, RBAC, sirkulasi)
+Simpus_final/
+├── frontend/   → React 18 + Vite + Tailwind CSS (SPA)
+└── simpus.be/  → Next.js 16 (App Router) + TypeScript + Prisma ORM + PostgreSQL
 ```
 
-## Ringkasan sesuai PRD
+## Ringkasan Fitur & Arsitektur
 
 | Kebutuhan PRD | Implementasi |
 |---|---|
-| FR-01 Manajemen Anggota (import Excel, kartu digital) | `backend`: model `User` (kolom `nis`, `kelas`, `library_card_number`), paket `maatwebsite/excel` sudah disiapkan di `composer.json` untuk import massal |
-| FR-02 Katalogisasi & Stok | `Book` + `BookCopy` model, status eksemplar real-time (tersedia/dipinjam/rusak/hilang) |
-| FR-03 Modul Sirkulasi | `LoanController` — maks 3 buku, durasi 7 hari, denda Rp1.000/hari, 1x perpanjangan mandiri (dikonfigurasi lewat `.env`) |
-| FR-04 Katalog Publik (OPAC) | `GET /api/books` dengan filter pencarian & kategori — dikonsumsi komponen `PopularBooks.jsx` di frontend |
-| FR-05 Laporan & Rekap | Paket `barryvdh/laravel-dompdf` (PDF) & `maatwebsite/excel` (XLSX) sudah disiapkan untuk endpoint laporan |
-| NFR-01 Kinerja pencarian < 1.5 detik | Index database pada kolom `title`, `category` |
-| NFR-02 Responsive | Seluruh UI frontend responsif (mobile–desktop) dengan Tailwind |
-| NFR-03 Keamanan (Bcrypt/Argon2, RBAC) | Password di-hash via cast `hashed`, middleware `role:pustakawan` |
-| NFR-04 Backup harian 00:00 | Jadwalkan `php artisan backup:run` di scheduler (lihat catatan di bawah) |
+| FR-01 Manajemen Anggota | Prisma model `User` & `Student` (NIS, kelas, kartu perpus), role-based auth (PUSTAKAWAN/SISWA) |
+| FR-02 Katalogisasi & Stok | Model `Book`, `BookCopy`, `Category`, `Author`, `Shelf`. Status eksemplar real-time: `TERSEDIA`, `DIPINJAM`, `RUSAK`, `HILANG` |
+| FR-03 Modul Sirkulasi | Endpoint `/api/sirkulasi/*` — peminjaman aktif, pengembalian, status denda |
+| FR-04 Katalog Publik (OPAC) | `GET /api/buku` & `GET /api/kategori` dengan filter pencarian & kategori |
+| FR-05 Pengaturan Sistem | Model `LibrarySetting` — batas pinjam hari, denda/hari, max eksemplar |
+| NFR-01 Keamanan | Password di-hash via Argon2, autentikasi JWT (JOSE) via HTTP-Only cookie & Bearer token |
+| NFR-02 Kinerja & Validasi | Input validation via Zod, Prisma PostgreSQL adapter, Next.js Node.js runtime |
+| NFR-03 Responsive UI | Tailwind CSS responsive (mobile–desktop) |
 
-## Menjalankan Frontend (React)
+---
 
+## Menjalankan Backend (`simpus.be`)
+
+Backend menggunakan **Next.js 16**, **Prisma ORM**, dan **PostgreSQL 16**.
+
+### 1. Prasyarat
+- Node.js >= 20
+- PostgreSQL database aktif (lokal atau via Docker)
+
+### 2. Instalasi & Setup
+```bash
+cd simpus.be
+pnpm install # atau npm install
+cp .env.example .env
+```
+
+Sesuaikan variabel di `.env` (terutama `DATABASE_URL` dan `AUTH_SECRET`).
+
+### 3. Migrasi Database & Seeding
+```bash
+npx prisma migrate dev
+npx prisma db seed
+```
+
+### 4. Jalankan Server Backend
+```bash
+pnpm dev # atau npm run dev
+```
+
+Backend API akan aktif di `http://localhost:3000`.
+
+Akun bawaan seeder:
+- **Pustakawan**: `admin` / `adminSimpus123`
+- **Siswa**: `siswa1` / `siswaSimpus123`
+
+---
+
+## Menjalankan Frontend (`frontend`)
+
+Frontend menggunakan **React 18**, **Vite**, dan **Tailwind CSS**.
+
+### 1. Instalasi & Setup
 ```bash
 cd frontend
 npm install
 cp .env.example .env
+```
+
+Pastikan `.env` memiliki:
+```env
+VITE_API_URL=/api
+```
+
+### 2. Jalankan Dev Server
+```bash
 npm run dev
 ```
 
-Landing page akan tersedia di `http://localhost:5173`, mereplikasi desain
-yang diberikan: header dengan navigasi & tombol Login, hero "Selamat
-Datang di SIMPUS SATAK" dengan CTA "Cari Buku" / "Lihat Katalog", 4
-kartu keunggulan, serta bagian "Buku Populer" lengkap dengan pencarian
-dan filter kategori yang interaktif.
+Frontend akan aktif di `http://localhost:5173`. Request `/api/*` secara otomatis diproksikan ke backend di `http://localhost:3000` via Vite dev server proxy.
 
-## Menjalankan Backend (Laravel)
+---
 
-Folder `backend/` berisi kode aplikasi (Models, Controllers, Migrations,
-Routes, konfigurasi) sesuai kebutuhan PRD. Karena instalasi paket Laravel
-memerlukan akses ke Packagist saat proses pembuatan proyek ini, jalankan
-langkah berikut di komputer Anda untuk melengkapi kerangka framework:
+## Menjalankan Testing
 
+Untuk menjalankan unit test backend:
 ```bash
-cd backend
-composer install
-cp .env.example .env
-php artisan key:generate
-php artisan migrate --seed
-php artisan serve
+cd simpus.be
+npm run test
 ```
-
-API akan tersedia di `http://localhost:8000/api`. Dua akun contoh dibuat
-oleh seeder:
-
-- Pustakawan: `pustakawan@simpus-satak.sch.id` / `password`
-- Siswa: `siswa@simpus-satak.sch.id` / `password`
-
-> Catatan: jika `backend/` belum berisi file inti Laravel (folder
-> `vendor`, `bootstrap/cache`, dll.), jalankan
-> `composer create-project laravel/laravel tmp && cp -r tmp/. .` lebih
-> dahulu di folder `backend/` sebelum `composer install`, lalu biarkan
-> file yang sudah disediakan di sini (app/Models, app/Http, routes,
-> database/migrations, bootstrap/app.php, config/cors.php) menimpa
-> berkas bawaan.
-
-## Menghubungkan Frontend ↔ Backend
-
-`frontend/src/services/api.js` menggunakan Axios dan membaca
-`VITE_API_URL` dari `.env` (default `/api`, diproksi oleh Vite ke
-`http://localhost:8000` — lihat `frontend/vite.config.js`). Untuk
-production, set `VITE_API_URL` ke domain API dan `FRONTEND_URL` di
-backend ke domain frontend agar CORS (`config/cors.php`) mengizinkannya.
-
-## Backup harian (NFR-04)
-
-Tambahkan pada `routes/console.php` backend:
-
-```php
-Schedule::command('backup:run')->dailyAt(env('BACKUP_DAILY_TIME', '00:00'));
-```
-
-(memerlukan paket `spatie/laravel-backup`, tambahkan ke `composer.json`
-bila ingin fitur ini aktif).

@@ -5,7 +5,8 @@ export default function ProtectedRoute({ children, allowedRoles }) {
   const { user, loading } = useAuth();
   const location = useLocation();
 
-  if (loading) {
+  // Hanya tampilkan layar tunggu jika sedang loading dan belum ada cache user
+  if (loading && !user) {
     return (
       <div className="flex min-h-screen items-center justify-center font-poppins text-sm text-slate-500">
         Memuat...

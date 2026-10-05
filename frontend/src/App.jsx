@@ -9,8 +9,9 @@
 
 import { lazy, Suspense } from 'react'
 import { Route, Routes, useLocation } from 'react-router-dom'
-import { AnimatePresence, motion } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { AuthProvider } from './lib/auth.jsx'
+import { NotificationProvider } from './context/NotificationContext.jsx'
 import ProtectedRoute from './components/common/ProtectedRoute.jsx'
 
 // --- Halaman Publik (Landing Page & Otentikasi) ---
@@ -70,59 +71,60 @@ export default function App() {
 
   return (
     <AuthProvider>
-      <Suspense fallback={<Fallback />}>
-        <AnimatePresence mode="wait" initial={false}>
-          <Routes location={location} key={location.pathname}>
+      <NotificationProvider>
+        <Suspense fallback={<Fallback />}>
+          {/* Tidak menggunakan key={location.pathname} pada Routes agar tidak meremount seluruh tree */}
+          <Routes location={location}>
             {/* ===================================================
                 1. Rute Publik
                =================================================== */}
             <Route path="/" element={<PageTransition><Landing /></PageTransition>} />
             <Route path="/login" element={<PageTransition><Login /></PageTransition>} />
 
-          {/* ===================================================
-              2. Rute Admin Perpustakaan
-             =================================================== */}
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute allowedRoles={['PUSTAKAWAN']}>
-                <AdminLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<DashboardAdmin />} />
-            <Route path="buku" element={<BukuAdmin />} />
-            <Route path="anggota" element={<AnggotaAdmin />} />
-            <Route path="sirkulasi" element={<SirkulasiAdmin />} />
-            <Route path="denda" element={<DendaAdmin />} />
-            <Route path="laporan" element={<LaporanAdmin />} />
-            <Route path="pengaturan" element={<PengaturanAdmin />} />
-          </Route>
+            {/* ===================================================
+                2. Rute Admin Perpustakaan
+               =================================================== */}
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute allowedRoles={['PUSTAKAWAN']}>
+                  <AdminLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<DashboardAdmin />} />
+              <Route path="buku" element={<BukuAdmin />} />
+              <Route path="anggota" element={<AnggotaAdmin />} />
+              <Route path="sirkulasi" element={<SirkulasiAdmin />} />
+              <Route path="denda" element={<DendaAdmin />} />
+              <Route path="laporan" element={<LaporanAdmin />} />
+              <Route path="pengaturan" element={<PengaturanAdmin />} />
+            </Route>
 
-          {/* ===================================================
-              3. Rute Siswa / Peminjam
-             =================================================== */}
-          <Route
-            path="/siswa"
-            element={
-              <ProtectedRoute allowedRoles={['SISWA']}>
-                <SiswaLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<DashboardSiswa />} />
-            <Route path="katalog" element={<KatalogSiswa />} />
-            <Route path="riwayat" element={<RiwayatSiswa />} />
-            <Route path="profil" element={<ProfileSiswa />} />
-          </Route>
+            {/* ===================================================
+                3. Rute Siswa / Peminjam
+               =================================================== */}
+            <Route
+              path="/siswa"
+              element={
+                <ProtectedRoute allowedRoles={['SISWA']}>
+                  <SiswaLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<DashboardSiswa />} />
+              <Route path="katalog" element={<KatalogSiswa />} />
+              <Route path="riwayat" element={<RiwayatSiswa />} />
+              <Route path="profil" element={<ProfileSiswa />} />
+            </Route>
 
-          {/* ===================================================
-              4. Fallback jika rute tidak ditemukan (404 redirect)
-             =================================================== */}
-          <Route path="*" element={<Landing />} />
-        </Routes>
-      </AnimatePresence>
-    </Suspense>
-  </AuthProvider>
-)
+            {/* ===================================================
+                4. Fallback jika rute tidak ditemukan (404 redirect)
+               =================================================== */}
+            <Route path="*" element={<Landing />} />
+          </Routes>
+        </Suspense>
+      </NotificationProvider>
+    </AuthProvider>
+  )
 }

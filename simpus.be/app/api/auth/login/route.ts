@@ -21,6 +21,7 @@ const DUMMY_PASSWORD_HASH =
 const loginSchema = z.object({
   username: z.string().trim().min(1, "Username wajib diisi").max(100, "Username terlalu panjang"),
   password: z.string().min(1, "Password wajib diisi").max(256, "Password terlalu panjang"),
+  role: z.enum(["PUSTAKAWAN", "SISWA"]).optional(),
 });
 
 function errorResponse(message: string, status: number) {
@@ -47,10 +48,10 @@ export async function POST(request: Request) {
     return errorResponse(parseResult.error.issues[0]?.message || INVALID_CREDENTIALS, 400);
   }
 
-  const { username, password } = parseResult.data;
+  const { username, password, role } = parseResult.data;
 
   try {
-    const user = await prisma.user.findUnique({
+    let user = await prisma.user.findUnique({
       where: { username },
       select: {
         id: true,
@@ -62,6 +63,27 @@ export async function POST(request: Request) {
       },
     });
 
+    if (!user) {
+      const student = await prisma.student.findUnique({
+        where: { nis: username },
+        select: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              passwordHash: true,
+              name: true,
+              role: true,
+              status: true,
+            },
+          },
+        },
+      });
+      if (student?.user) {
+        user = student.user;
+      }
+    }
+
     const passwordMatches = await argon2.verify(
       user?.passwordHash ?? DUMMY_PASSWORD_HASH,
       password,
@@ -69,6 +91,13 @@ export async function POST(request: Request) {
 
     if (!user || user.status !== "AKTIF" || !passwordMatches) {
       return errorResponse(INVALID_CREDENTIALS, 401);
+    }
+
+    if (role && user.role !== role) {
+      if (role === "PUSTAKAWAN") {
+        return errorResponse("Akun ini bukan akun Admin/Pustakawan. Silakan masuk melalui tab Siswa.", 403);
+      }
+      return errorResponse("Akun ini bukan akun Siswa. Silakan masuk melalui tab Admin.", 403);
     }
 
     await prisma.user.update({

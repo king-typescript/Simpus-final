@@ -16,14 +16,21 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     let mounted = true
+    const token = localStorage.getItem('simpus_token')
+
+    if (!token && !user) {
+      setLoading(false)
+      return
+    }
+
     AuthService.me()
       .then((res) => {
         if (!mounted) return
         const d = res.data
         if (d?.role) {
           const userObj = d.role === 'SISWA'
-            ? { role: d.role, ...(d.student || {}) }
-            : { role: d.role, name: d.user?.name || 'Administrator Perpustakaan' }
+            ? { role: d.role, ...(d.student || {}), username: d.user?.username || '' }
+            : { role: d.role, name: d.user?.name || 'Administrator Perpustakaan', username: d.user?.username || '' }
           setUser((prev) => {
             const merged = prev ? { ...prev, ...userObj } : userObj
             localStorage.setItem('simpus_user', JSON.stringify(merged))
@@ -31,8 +38,10 @@ export function AuthProvider({ children }) {
           })
         }
       })
-      .catch(() => {
-        if (mounted) {
+      .catch((err) => {
+        if (!mounted) return
+        // Hanya bersihkan sesi jika server secara eksplisit mengembalikan 401 (Unauthorized)
+        if (err?.response?.status === 401) {
           setUser(null)
           localStorage.removeItem('simpus_user')
           clearAuthToken()
@@ -41,6 +50,7 @@ export function AuthProvider({ children }) {
       .finally(() => {
         if (mounted) setLoading(false)
       })
+
     return () => {
       mounted = false
     }

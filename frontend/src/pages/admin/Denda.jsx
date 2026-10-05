@@ -13,6 +13,7 @@ import { PaymentModal } from "../../admin/components/denda/PaymentModal";
 import { useFineSettings } from "../../admin/hooks/useFineSettings";
 import { calculateFine, formatRupiah } from "../../utils/formatters";
 import { FineService } from "../../services/api";
+import { useNotification } from "../../context/NotificationContext";
 
 const initialFines = [
   {
@@ -69,6 +70,8 @@ export default function Denda() {
   const [selectedFine, setSelectedFine] = useState(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("Tunai");
+
+  const { showSuccess, showError } = useNotification();
 
   const finePerDay = useFineSettings();
 
@@ -154,12 +157,20 @@ export default function Denda() {
   const confirmPayment = async () => {
     if (!selectedFine) return;
     try {
+      const fineAmount = selectedFine.fine ? Number(selectedFine.fine).toFixed(2) : undefined;
+      const receipt = `KW-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
       await FineService.pay(selectedFine.id, {
         paymentMethod: "CASH",
+        receiptNumber: receipt,
+        ...(fineAmount ? { amount: fineAmount } : {}),
       });
       await loadFines();
+      showSuccess(
+        "Pembayaran Berhasil",
+        `Pembayaran denda sebesar ${formatRupiah(selectedFine.fine)} untuk ${selectedFine.member} berhasil dicatat (No: ${receipt}).`
+      );
     } catch (err) {
-      alert(err?.response?.data?.error || "Gagal memproses pembayaran denda.");
+      showError("Gagal Memproses Pembayaran", err?.response?.data?.error || "Gagal memproses pembayaran denda.");
     }
     closePaymentModal();
   };

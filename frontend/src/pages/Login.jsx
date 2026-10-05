@@ -8,7 +8,7 @@ import gambarHeader from '../assets/image/siswa/bg-perpus.jpeg';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, logout } = useAuth();
 
   const [peran, setPeran] = useState('siswa');
   const [identifier, setIdentifier] = useState('');
@@ -28,14 +28,29 @@ export default function Login() {
     setIsLoading(true);
 
     try {
+      const expectedRole = peran === 'admin' ? 'PUSTAKAWAN' : 'SISWA';
+
       // Implementasi request ke Auth Service API
       const res = await login({
         username: identifier, // Backend menerima field bernama 'username'
         password: password,
+        role: expectedRole,
       });
 
-      // Arahkan ke dashboard sesuai role yang dikembalikan backend
       const userRole = res?.user?.role;
+
+      // Double Guard: Proteksi berlapis di sisi client
+      if (userRole !== expectedRole) {
+        await logout();
+        setErrorMsg(
+          expectedRole === 'PUSTAKAWAN'
+            ? 'Akun ini bukan akun Admin/Pustakawan. Silakan masuk melalui tab Siswa.'
+            : 'Akun ini bukan akun Siswa. Silakan masuk melalui tab Admin.'
+        );
+        return;
+      }
+
+      // Arahkan ke dashboard sesuai role yang dikonfirmasi
       if (userRole === 'PUSTAKAWAN') {
         navigate('/admin', { replace: true });
       } else {
@@ -147,14 +162,14 @@ export default function Login() {
             {/* Input Identifier dengan AnimatePresence agar transisi label halus */}
             <div className="space-y-1.5">
               <label className="block text-sm font-semibold text-slate-700">
-                {peran === 'siswa' ? 'Username Siswa' : 'Username Admin'}
+                {peran === 'siswa' ? 'NIS atau Username' : 'Username Admin'}
               </label>
               <div className="relative">
                 <input
                   type="text"
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder={peran === 'siswa' ? 'Contoh: siswa001' : 'Contoh: admin'}
+                  placeholder={peran === 'siswa' ? 'Contoh: 20260001' : 'Contoh: admin'}
                   disabled={isLoading}
                   autoComplete="username"
                   className="w-full h-12 px-4 bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-primary-blue focus:ring-4 focus:ring-primary-blue/10 text-slate-800 transition-all shadow-sm disabled:bg-slate-50 disabled:text-slate-400 placeholder:text-slate-400"

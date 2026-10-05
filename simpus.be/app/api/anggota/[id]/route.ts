@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { UserStatus } from "@/app/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { noStoreHeaders, requireLibrarian } from "@/lib/auth";
 
@@ -53,12 +54,16 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (typeof body !== "object" || body === null) return jsonError("Body request tidak valid.", 422);
 
   const input = body as Record<string, unknown>;
-  const data: { nis?: string; name?: string; className?: string; libraryCardNumber?: string; phone?: string | null } = {};
+  const data: { nis?: string; name?: string; className?: string; libraryCardNumber?: string; phone?: string | null; isActive?: boolean } = {};
   for (const field of ["nis", "name", "className", "libraryCardNumber"] as const) {
     if (field in input) {
       if (typeof input[field] !== "string" || !input[field].trim()) return jsonError("Data anggota tidak valid.", 422);
       data[field] = input[field].trim();
     }
+  }
+  if ("isActive" in input) {
+    if (typeof input.isActive !== "boolean") return jsonError("Status anggota tidak valid.", 422);
+    data.isActive = input.isActive;
   }
   if ("phone" in input) {
     if (input.phone !== null && typeof input.phone !== "string") return jsonError("Nomor telepon tidak valid.", 422);
@@ -71,7 +76,10 @@ export async function PATCH(request: Request, context: RouteContext) {
       const current = await tx.student.findUnique({ where: { id }, select: { userId: true } });
       if (!current) return null;
       const student = await tx.student.update({ where: { id }, data, select: selectStudent });
-      if (data.name !== undefined) await tx.user.update({ where: { id: current.userId }, data: { name: data.name } });
+      const userUpdate: { name?: string; status?: UserStatus } = {};
+      if (data.name !== undefined) userUpdate.name = data.name;
+      if (data.isActive !== undefined) userUpdate.status = data.isActive ? UserStatus.AKTIF : UserStatus.NONAKTIF;
+      if (Object.keys(userUpdate).length) await tx.user.update({ where: { id: current.userId }, data: userUpdate });
       await tx.auditLog.create({ data: { userId: auth.user.id, action: "UPDATE", entityType: "Student", entityId: id, newData: student } });
       return student;
     });

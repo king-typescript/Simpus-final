@@ -8,6 +8,7 @@ import { BookModal } from "../../admin/components/buku/BookModal";
 import { BookTable } from "../../admin/components/buku/BookTable";
 import { BookGridCard } from "../../admin/components/buku/BookGridCard";
 import { BookService, CategoryService } from "../../services/api";
+import { useNotification } from "../../context/NotificationContext";
 
 const initialBooks = [
   {
@@ -79,6 +80,8 @@ function Buku() {
   const [categoryFilter, setCategoryFilter] = useState("Semua");
   const [status, setStatus] = useState("Semua");
   const [viewMode, setViewMode] = useState("table");
+
+  const { showSuccess, showError, showConfirm } = useNotification();
 
   const [showModal, setShowModal] = useState(false);
   const [selectedBook, setSelectedBook] = useState(null);
@@ -199,15 +202,19 @@ function Buku() {
     e.preventDefault();
 
     if (!form.title || !form.isbn || !form.author) {
-      alert("Judul, ISBN, dan penulis wajib diisi.");
+      showError("Input Tidak Lengkap", "Judul, ISBN, dan penulis wajib diisi.");
       return;
     }
 
     try {
-      if (selectedBook && typeof selectedBook.id === "string") {
+      const isEditing = Boolean(selectedBook && typeof selectedBook.id === "string");
+      if (isEditing) {
         const updateData = {
           title: form.title,
           isbn: form.isbn,
+          authorName: form.author,
+          categoryName: form.category,
+          stock: Number(form.stock) || 0,
         };
 
         if (form.categoryId) {
@@ -227,26 +234,40 @@ function Buku() {
       
       await loadBooks();
       setShowModal(false);
+      showSuccess(
+        isEditing ? "Buku Berhasil Diperbarui" : "Buku Berhasil Ditambahkan",
+        isEditing
+          ? `Data buku "${form.title}" berhasil diperbarui di database.`
+          : `Buku baru "${form.title}" berhasil disimpan ke sistem perpustakaan.`
+      );
     } catch (err) {
-      alert(err?.response?.data?.error || "Terjadi kesalahan saat menyimpan buku.");
+      showError("Gagal Menyimpan Buku", err?.response?.data?.error || "Terjadi kesalahan saat menyimpan buku.");
     }
   };
 
-  const handleDelete = async (id) => {
-    const confirmDelete = window.confirm(
-      "Apakah kamu yakin ingin menghapus buku ini?"
-    );
-    if (!confirmDelete) return;
+  const handleDelete = (id) => {
+    const bookTarget = books.find((b) => b.id === id);
+    const bookTitle = bookTarget ? bookTarget.title : "buku ini";
 
-    try {
-      if (typeof id === "string") {
-        await BookService.delete(id);
-      }
-      setBooks((prev) => prev.filter((book) => book.id !== id));
-      await loadBooks();
-    } catch (err) {
-      alert(err?.response?.data?.error || "Gagal menghapus buku.");
-    }
+    showConfirm({
+      title: "Hapus Buku?",
+      message: `Apakah Anda yakin ingin menghapus buku "${bookTitle}" dari katalog perpustakaan?`,
+      confirmText: "Ya, Hapus",
+      cancelText: "Batal",
+      confirmVariant: "danger",
+      onConfirm: async () => {
+        try {
+          if (typeof id === "string") {
+            await BookService.delete(id);
+          }
+          setBooks((prev) => prev.filter((book) => book.id !== id));
+          await loadBooks();
+          showSuccess("Berhasil Dihapus", `Buku "${bookTitle}" berhasil dihapus.`);
+        } catch (err) {
+          showError("Gagal Menghapus", err?.response?.data?.error || "Gagal menghapus buku.");
+        }
+      },
+    });
   };
 
   return (

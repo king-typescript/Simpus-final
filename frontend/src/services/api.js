@@ -17,6 +17,7 @@ export const AuthService = {
   login: (credentials) => api.post('/auth/login', credentials),
   logout: () => api.post('/auth/logout'),
   me: () => api.get('/auth/me'),
+  updatePassword: (data) => api.patch('/auth/change-password', data),
   getDashboard: () => api.get('/dashboard'),
 }
 
@@ -46,6 +47,7 @@ export const FineService = {
 
 export const LibrarySettingService = {
   get: () => api.get('/pengaturan/perpustakaan'),
+  update: (data) => api.patch('/pengaturan/perpustakaan', data),
 }
 
 export { saveAuthToken, clearAuthToken }

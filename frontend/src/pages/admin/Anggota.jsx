@@ -9,6 +9,7 @@ import { MemberCardModal } from "../../admin/components/anggota/MemberCardModal"
 import { MemberTable } from "../../admin/components/anggota/MemberTable";
 import { MemberGridCard } from "../../admin/components/anggota/MemberGridCard";
 import { MemberService } from "../../services/api";
+import { useNotification } from "../../context/NotificationContext";
 
 const initialMembers = [
   {
@@ -80,6 +81,8 @@ function Anggota() {
   const [statusFilter, setStatusFilter] = useState("Semua");
   const [viewMode, setViewMode] = useState("table");
 
+  const { showSuccess, showError, showConfirm } = useNotification();
+
   const [showModal, setShowModal] = useState(false);
   const [showCardModal, setShowCardModal] = useState(false);
   const [selectedMember, setSelectedMember] = useState(null);
@@ -94,6 +97,32 @@ function Anggota() {
   });
 
   const [submitting, setSubmitting] = useState(false);
+
+  const fetchMembers = async () => {
+    try {
+      const res = await MemberService.getAll({ limit: 100 });
+      if (res.data?.data) {
+        const apiMembers = res.data.data.map((m) => ({
+          id: m.id,
+          nis: m.nis,
+          name: m.name,
+          className: m.className,
+          phone: m.phone || "-",
+          status: m.isActive ? "Aktif" : "Nonaktif",
+          joined: m.joinedAt
+            ? new Date(m.joinedAt).toLocaleDateString("id-ID", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              })
+            : "-",
+        }));
+        setMembers(apiMembers);
+      }
+    } catch (err) {
+      console.error("Gagal memuat anggota dari backend:", err);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -185,18 +214,19 @@ function Anggota() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.nis || !form.name || !form.className) {
-      alert("NIS, nama, dan kelas wajib diisi.");
+      showError("Input Tidak Lengkap", "NIS, nama, dan kelas wajib diisi.");
       return;
     }
 
     if (!selectedMember && form.password && form.password.length < 12) {
-      alert("Password minimal harus 12 karakter.");
+      showError("Password Terlalu Pendek", "Password minimal harus 12 karakter.");
       return;
     }
 
     setSubmitting(true);
     try {
-      if (selectedMember && typeof selectedMember.id === "string") {
+      const isEditing = Boolean(selectedMember && typeof selectedMember.id === "string");
+      if (isEditing) {
         await MemberService.update(selectedMember.id, {
           nis: form.nis,
           name: form.name,
@@ -217,49 +247,47 @@ function Anggota() {
       }
       
       // Muat ulang data setelah sukses
-      const res = await MemberService.getAll({ limit: 100 });
-      if (res.data?.data) {
-        const apiMembers = res.data.data.map(m => ({
-          id: m.id,
-          nis: m.nis,
-          name: m.name,
-          className: m.className,
-          phone: m.phone || "-",
-          status: m.isActive ? "Aktif" : "Nonaktif",
-          joined: m.joinedAt ? new Date(m.joinedAt).toLocaleDateString("id-ID", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric"
-          }) : "-",
-        }));
-        setMembers(apiMembers);
-      }
+      await fetchMembers();
       setShowModal(false);
+      showSuccess(
+        isEditing ? "Anggota Berhasil Diperbarui" : "Anggota Berhasil Ditambahkan",
+        isEditing
+          ? `Data anggota ${form.name} berhasil diperbarui di database.`
+          : `Anggota baru ${form.name} (NIS: ${form.nis}) berhasil didaftarkan.`
+      );
     } catch (err) {
       if (err?.response?.status === 401 || err?.response?.status === 403) {
-        alert("Sesi autentikasi telah habis atau tidak memiliki hak akses. Silakan login kembali.");
+        showError("Akses Ditolak", "Sesi autentikasi telah habis atau tidak memiliki hak akses. Silakan login kembali.");
       } else {
-        alert(err?.response?.data?.error || "Gagal menyimpan data anggota.");
+        showError("Gagal Menyimpan", err?.response?.data?.error || "Gagal menyimpan data anggota.");
       }
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDelete = async (id) => {
-    const confirmDelete = window.confirm(
-      "Apakah kamu yakin ingin menghapus anggota ini?"
-    );
-    if (!confirmDelete) return;
+  const handleDelete = (id) => {
+    const memberTarget = members.find((m) => m.id === id);
+    const memberName = memberTarget ? memberTarget.name : "anggota ini";
 
-    try {
-      if (typeof id === "string") {
-        await MemberService.delete(id);
-      }
-      setMembers((prev) => prev.filter((member) => member.id !== id));
-    } catch (err) {
-      alert(err?.response?.data?.error || "Gagal menghapus anggota.");
-    }
+    showConfirm({
+      title: "Nonaktifkan Anggota?",
+      message: `Apakah Anda yakin ingin menonaktifkan ${memberName}? Akun tidak akan dapat meminjam buku sebelum diaktifkan kembali.`,
+      confirmText: "Ya, Nonaktifkan",
+      cancelText: "Batal",
+      confirmVariant: "danger",
+      onConfirm: async () => {
+        try {
+          if (typeof id === "string") {
+            await MemberService.delete(id);
+          }
+          await fetchMembers();
+          showSuccess("Berhasil", `Anggota ${memberName} telah dinonaktifkan.`);
+        } catch (err) {
+          showError("Gagal", err?.response?.data?.error || "Gagal menonaktifkan anggota.");
+        }
+      },
+    });
   };
 
   return (

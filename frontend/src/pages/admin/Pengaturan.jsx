@@ -9,6 +9,8 @@ import {
   CheckCircle,
   AlertCircle,
 } from "lucide-react";
+import { LibrarySettingService, AuthService } from "../../services/api";
+import { useNotification } from "../../context/NotificationContext";
 
 // ======================================================
 // DATA DEFAULT
@@ -45,6 +47,7 @@ export default function Pengaturan() {
 
   const [saved, setSaved] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const { showSuccess, showError } = useNotification();
 
   // ====================================================
   // PROFIL
@@ -84,10 +87,32 @@ export default function Pengaturan() {
   });
 
   // ====================================================
-  // LOAD SEMUA DATA DARI LOCAL STORAGE
+  // LOAD SEMUA DATA DARI LOCAL STORAGE & BACKEND
   // ====================================================
 
   useEffect(() => {
+    let mounted = true;
+    const fetchApiSettings = async () => {
+      try {
+        const res = await LibrarySettingService.get();
+        if (mounted && res.data?.data) {
+          const apiData = res.data.data;
+          setLoanSettings((prev) => ({
+            ...prev,
+            maxBooks: apiData.maxActiveCopies || prev.maxBooks,
+            loanDays: apiData.maxLoanDays || prev.loanDays,
+          }));
+          setFineSettings((prev) => ({
+            ...prev,
+            finePerDay: Number(apiData.fineRatePerDay) || prev.finePerDay,
+          }));
+        }
+      } catch (err) {
+        console.error("Gagal memuat pengaturan dari API:", err);
+      }
+    };
+    fetchApiSettings();
+
     try {
       // -------------------------------
       // PROFILE
@@ -163,63 +188,86 @@ export default function Pengaturan() {
         error
       );
     }
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // ====================================================
   // SIMPAN PERUBAHAN
   // ====================================================
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setSaved(false);
     setErrorMessage("");
 
     try {
       // ==================================================
-      // VALIDASI KEAMANAN
+      // VALIDASI & UPDATE KEAMANAN
       // ==================================================
 
-      if (
-        activeTab === "keamanan" &&
-        (
-          security.oldPassword ||
-          security.newPassword ||
-          security.confirmPassword
-        )
-      ) {
+      if (activeTab === "keamanan") {
         if (!security.oldPassword) {
-          setErrorMessage(
-            "Password lama harus diisi."
-          );
+          showError("Input Tidak Lengkap", "Password lama harus diisi.");
+          setErrorMessage("Password lama harus diisi.");
           return;
         }
 
         if (!security.newPassword) {
-          setErrorMessage(
-            "Password baru harus diisi."
-          );
+          showError("Input Tidak Lengkap", "Password baru harus diisi.");
+          setErrorMessage("Password baru harus diisi.");
           return;
         }
 
         if (security.newPassword.length < 6) {
-          setErrorMessage(
-            "Password baru minimal 6 karakter."
-          );
+          showError("Password Kurang Panjang", "Password baru minimal 6 karakter.");
+          setErrorMessage("Password baru minimal 6 karakter.");
           return;
         }
 
-        if (
-          security.newPassword !==
-          security.confirmPassword
-        ) {
-          setErrorMessage(
-            "Konfirmasi password tidak sama."
-          );
+        if (security.newPassword !== security.confirmPassword) {
+          showError("Konfirmasi Tidak Cocok", "Konfirmasi password tidak sama.");
+          setErrorMessage("Konfirmasi password tidak sama.");
           return;
         }
+
+        await AuthService.updatePassword({
+          oldPassword: security.oldPassword,
+          newPassword: security.newPassword,
+        });
+
+        setSecurity({
+          oldPassword: "",
+          newPassword: "",
+          confirmPassword: "",
+        });
+
+        showSuccess("Password Berhasil Diperbarui", "Password akun Anda telah berhasil diubah di database.");
       }
 
       // ==================================================
-      // DATA PROFIL
+      // DATA PEMINJAMAN KE BACKEND
+      // ==================================================
+
+      if (activeTab === "peminjaman") {
+        await LibrarySettingService.update({
+          maxLoanDays: Number(loanSettings.loanDays),
+          maxActiveCopies: Number(loanSettings.maxBooks),
+        });
+      }
+
+      // ==================================================
+      // DATA DENDA KE BACKEND
+      // ==================================================
+
+      if (activeTab === "denda") {
+        await LibrarySettingService.update({
+          fineRatePerDay: Number(fineSettings.finePerDay).toFixed(2),
+        });
+      }
+
+      // ==================================================
+      // DATA PROFIL & LAINNYA
       // ==================================================
 
       const profileData = {
@@ -228,41 +276,20 @@ export default function Pengaturan() {
         phone: profile.phone.trim(),
       };
 
-      // ==================================================
-      // DATA PEMINJAMAN
-      // ==================================================
-
       const loanData = {
         maxBooks: Number(loanSettings.maxBooks),
         loanDays: Number(loanSettings.loanDays),
-        maxExtension: Number(
-          loanSettings.maxExtension
-        ),
+        maxExtension: Number(loanSettings.maxExtension),
       };
-
-      // ==================================================
-      // DATA DENDA
-      // ==================================================
 
       const fineData = {
-        finePerDay: Number(
-          fineSettings.finePerDay
-        ),
+        finePerDay: Number(fineSettings.finePerDay),
       };
 
-      // ==================================================
-      // DATA NOTIFIKASI
-      // ==================================================
-
       const notificationData = {
-        loanReminder:
-          notifications.loanReminder,
-
-        lateReminder:
-          notifications.lateReminder,
-
-        paymentNotification:
-          notifications.paymentNotification,
+        loanReminder: notifications.loanReminder,
+        lateReminder: notifications.lateReminder,
+        paymentNotification: notifications.paymentNotification,
       };
 
       // ==================================================
@@ -307,45 +334,29 @@ export default function Pengaturan() {
       );
 
       // ==================================================
-      // BERSIHKAN PASSWORD DARI INPUT
-      // ==================================================
-
-      if (activeTab === "keamanan") {
-        setSecurity({
-          oldPassword: "",
-          newPassword: "",
-          confirmPassword: "",
-        });
-      }
-
-      // ==================================================
       // NOTIFIKASI BERHASIL
       // ==================================================
 
       setSaved(true);
+      if (activeTab !== "keamanan") {
+        showSuccess(
+          "Pengaturan Disimpan",
+          `Pengaturan ${activeTab.toUpperCase()} berhasil diperbarui.`
+        );
+      }
 
       setTimeout(() => {
         setSaved(false);
       }, 3000);
-
-      console.log(
-        "Pengaturan berhasil disimpan:",
-        {
-          profileData,
-          loanData,
-          fineData,
-          notificationData,
-        }
-      );
     } catch (error) {
       console.error(
         "Gagal menyimpan pengaturan:",
         error
       );
 
-      setErrorMessage(
-        "Terjadi kesalahan saat menyimpan pengaturan."
-      );
+      const msg = error?.response?.data?.error || "Terjadi kesalahan saat menyimpan pengaturan.";
+      showError("Gagal Menyimpan", msg);
+      setErrorMessage(msg);
     }
   };
 
@@ -874,11 +885,9 @@ export default function Pengaturan() {
                       />
                     </div>
 
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
-                      Password akan benar-benar diubah
-                      setelah sistem login terhubung ke
-                      backend. Untuk keamanan, password
-                      tidak disimpan di localStorage.
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700">
+                      Password akan langsung diperbarui di database backend. 
+                      Anda harus menggunakan password baru pada login berikutnya.
                     </div>
 
                   </div>

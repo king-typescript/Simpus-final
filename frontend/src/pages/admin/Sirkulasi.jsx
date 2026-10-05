@@ -15,6 +15,7 @@ import { CirculationTable } from "../../admin/components/sirkulasi/CirculationTa
 import { useFineSettings } from "../../admin/hooks/useFineSettings";
 import { calculateFine, formatRupiah } from "../../utils/formatters";
 import { LoanService, MemberService, BookService } from "../../services/api";
+import { useNotification } from "../../context/NotificationContext";
 
 const initialTransactions = [
   {
@@ -89,6 +90,8 @@ function Sirkulasi() {
   const finePerDay = useFineSettings();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("Semua");
+
+  const { showSuccess, showError, showConfirm } = useNotification();
 
   const [showBorrowModal, setShowBorrowModal] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
@@ -202,7 +205,7 @@ function Sirkulasi() {
   const handleBorrow = async (e) => {
     e.preventDefault();
     if (!borrowForm.memberNis || !borrowForm.bookId) {
-      alert("Pilih anggota dan buku.");
+      showError("Data Belum Lengkap", "Silakan pilih anggota dan buku yang akan dipinjam.");
       return;
     }
 
@@ -219,8 +222,12 @@ function Sirkulasi() {
       });
       await loadCirculationData();
       setShowBorrowModal(false);
+      showSuccess(
+        "Peminjaman Berhasil",
+        `Buku "${book.title}" berhasil dipinjamkan kepada ${member.name} (${member.nis}).`
+      );
     } catch (err) {
-      alert(err?.response?.data?.error || "Gagal memproses peminjaman.");
+      showError("Gagal Meminjam", err?.response?.data?.error || "Gagal memproses peminjaman.");
     }
   };
 
@@ -229,35 +236,53 @@ function Sirkulasi() {
     setShowReturnModal(true);
   };
 
-  const handleReturn = async () => {
+  const [isReturning, setIsReturning] = useState(false);
+
+  const handleReturn = async (returnData) => {
     if (!selectedTransaction) return;
     
+    setIsReturning(true);
     try {
       await LoanService.returnBook({
-        loanId: selectedTransaction.loanId,
-        copyId: selectedTransaction.copyId,
-        returnCondition: "BAIK",
+        loanItemId: selectedTransaction.id,
+        status: returnData.status,
+        returnCondition: returnData.returnCondition,
+        returnNote: returnData.returnNote,
       });
       await loadCirculationData();
       setShowReturnModal(false);
+      const title = selectedTransaction.bookTitle;
       setSelectedTransaction(null);
+      showSuccess("Pengembalian Berhasil", `Buku "${title}" telah berhasil dikembalikan ke perpustakaan.`);
     } catch (err) {
-      alert(err?.response?.data?.error || "Gagal memproses pengembalian buku.");
+      showError("Gagal Pengembalian", err?.response?.data?.error || "Gagal memproses pengembalian buku.");
+    } finally {
+      setIsReturning(false);
     }
   };
 
-  const handleExtend = async (t) => {
+  const handleExtend = (t) => {
     if (t.extension >= 1) {
-      alert("Transaksi sudah pernah diperpanjang.");
+      showError("Tidak Dapat Diperpanjang", "Transaksi ini sudah pernah diperpanjang.");
       return;
     }
     
-    try {
-      await LoanService.extend({ loanId: t.loanId });
-      await loadCirculationData();
-    } catch (err) {
-      alert(err?.response?.data?.error || "Gagal memperpanjang masa peminjaman.");
-    }
+    showConfirm({
+      title: "Perpanjang Peminjaman?",
+      message: `Perpanjang masa pinjam buku "${t.bookTitle}" untuk peminjam ${t.memberName}?`,
+      confirmText: "Perpanjang",
+      cancelText: "Batal",
+      confirmVariant: "primary",
+      onConfirm: async () => {
+        try {
+          await LoanService.extend({ loanId: t.loanId });
+          await loadCirculationData();
+          showSuccess("Berhasil Diperpanjang", `Masa pinjam buku "${t.bookTitle}" telah diperpanjang.`);
+        } catch (err) {
+          showError("Gagal Memperpanjang", err?.response?.data?.error || "Gagal memperpanjang masa peminjaman.");
+        }
+      },
+    });
   };
 
   return (
@@ -354,6 +379,7 @@ function Sirkulasi() {
         transaction={selectedTransaction}
         finePerDay={finePerDay}
         onConfirm={handleReturn}
+        submitting={isReturning}
       />
     </div>
   );
