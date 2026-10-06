@@ -13,8 +13,8 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-if (process.env.NODE_ENV === "production") {
-  throw new Error("Seed tidak boleh dijalankan pada production.");
+if (process.env.NODE_ENV === "production" && process.env.ALLOW_SEED !== "true") {
+  throw new Error("Seed tidak boleh dijalankan pada production tanpa ALLOW_SEED=true.");
 }
 
 const databaseUrl = requiredEnv("DATABASE_URL");
