@@ -1,15 +1,25 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:3000",
-  process.env.FRONTEND_URL,
-].filter(Boolean) as string[];
+const frontendEnv = process.env.FRONTEND_URL;
+const normalizedFrontend = frontendEnv
+  ? frontendEnv.startsWith("http://") || frontendEnv.startsWith("https://")
+    ? frontendEnv
+    : `https://${frontendEnv}`
+  : null;
 
-export function proxy(request: NextRequest) {
+const allowedOrigins = new Set(
+  [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://simpus.satak.biz.id",
+    normalizedFrontend,
+  ].filter(Boolean) as string[]
+);
+
+export function middleware(request: NextRequest) {
   const origin = request.headers.get("origin");
-  const isAllowedOrigin = origin ? allowedOrigins.includes(origin) : false;
+  const isAllowedOrigin = origin ? allowedOrigins.has(origin) : false;
 
   // Handle preflight requests
   if (request.method === "OPTIONS") {
