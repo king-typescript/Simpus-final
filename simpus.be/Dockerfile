@@ -6,9 +6,6 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 ENV HOSTNAME="0.0.0.0"
 ENV PORT=3000
-# Placeholder environment variables untuk tahap build Next.js (dioverride saat runtime)
-ENV DATABASE_URL="postgresql://postgres:postgres@localhost:5432/simpus_db?schema=public"
-ENV AUTH_SECRET="simpus_satak_secret_key_at_least_32_characters_long_123456"
 
 # Install dependencies sistem yang dibutuhkan Prisma dan runtime
 RUN apt-get update \
@@ -33,11 +30,18 @@ COPY . .
 RUN sed -i 's/\r$//' /app/docker-entrypoint.sh \
   && chmod +x /app/docker-entrypoint.sh
 
-# Generate Prisma Client
-RUN pnpm prisma generate
+# Build stage: gunakan ARG sementara agar secret tidak tertinggal di layer image ENV
+ARG BUILD_DATABASE_URL="postgresql://postgres:postgres@localhost:5432/simpus_db?schema=public"
+ARG BUILD_AUTH_SECRET="build_only_dummy_secret_not_for_production_min32chars"
 
-# Build aplikasi Next.js
-RUN pnpm build
+# Generate Prisma Client & Build Next.js
+RUN DATABASE_URL="$BUILD_DATABASE_URL" AUTH_SECRET="$BUILD_AUTH_SECRET" pnpm prisma generate \
+  && DATABASE_URL="$BUILD_DATABASE_URL" AUTH_SECRET="$BUILD_AUTH_SECRET" pnpm build
+
+# Jalankan container menggunakan user non-root 'node' demi standar keamanan CIS/OWASP
+RUN chown -R node:node /app
+
+USER node
 
 EXPOSE 3000
 

@@ -62,14 +62,6 @@ export async function verifyAuthToken(token: string) {
 
 export async function getAuthTokenFromRequest() {
   try {
-    const cookieStore = await cookies();
-    const tokenFromCookie = cookieStore.get(AUTH_COOKIE_NAME)?.value;
-    if (tokenFromCookie) return tokenFromCookie;
-  } catch {
-    // Ignore cookie resolution error in environments without cookie store
-  }
-
-  try {
     if (typeof headers === "function") {
       const headersList = await headers();
       const authHeader = headersList?.get("authorization");
@@ -79,6 +71,14 @@ export async function getAuthTokenFromRequest() {
     }
   } catch {
     // Ignore header resolution error in test mock environments
+  }
+
+  try {
+    const cookieStore = await cookies();
+    const tokenFromCookie = cookieStore.get(AUTH_COOKIE_NAME)?.value;
+    if (tokenFromCookie) return tokenFromCookie;
+  } catch {
+    // Ignore cookie resolution error in environments without cookie store
   }
 
   return null;

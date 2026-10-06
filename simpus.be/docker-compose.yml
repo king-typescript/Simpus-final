@@ -3,8 +3,8 @@ services:
     image: postgres:16-alpine
     container_name: simpus_postgres
     restart: unless-stopped
-    ports:
-      - "5432:5432"
+    # Port 5432 sengaja tidak di-expose ke publik demi keamanan.
+    # Komunikasi database hanya dilakukan melalui jaringan internal Docker (simpus_network).
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -26,15 +26,17 @@ services:
       dockerfile: Dockerfile
     container_name: simpus_app
     restart: unless-stopped
+    # Hanya bind ke localhost (127.0.0.1) agar port 3000 tidak bisa diakses langsung dari publik tanpa melalui Nginx
     ports:
-      - "${PORT:-3000}:3000"
+      - "127.0.0.1:${PORT:-3000}:3000"
     env_file:
       - path: .env
         required: false
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-simpus_db}?schema=public
-      AUTH_SECRET: ${AUTH_SECRET:-simpus_satak_secret_key_at_least_32_characters_long_123456}
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET harus diatur di file .env dan minimal 32 karakter}
+      CRON_SECRET: ${CRON_SECRET:-}
       PORT: 3000
       HOSTNAME: 0.0.0.0
       RUN_MIGRATION: ${RUN_MIGRATION:-true}

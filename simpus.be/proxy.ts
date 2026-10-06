@@ -9,15 +9,15 @@ const allowedOrigins = [
 
 export function proxy(request: NextRequest) {
   const origin = request.headers.get("origin");
-  const isAllowedOrigin = origin && (allowedOrigins.includes(origin) || origin.endsWith(".vercel.app"));
+  const isAllowedOrigin = origin ? allowedOrigins.includes(origin) : false;
 
   // Handle preflight requests
   if (request.method === "OPTIONS") {
     const response = new NextResponse(null, { status: 204 });
     if (isAllowedOrigin && origin) {
       response.headers.set("Access-Control-Allow-Origin", origin);
+      response.headers.set("Access-Control-Allow-Credentials", "true");
     }
-    response.headers.set("Access-Control-Allow-Credentials", "true");
     response.headers.set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
     response.headers.set(
       "Access-Control-Allow-Headers",
