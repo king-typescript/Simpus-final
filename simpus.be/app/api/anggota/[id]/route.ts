@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { UserStatus } from "@/app/generated/prisma/client";
+import { FineStatus, LoanStatus, UserStatus } from "@/app/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { noStoreHeaders, requireLibrarian } from "@/lib/auth";
+import { invalidateDashboardCache } from "@/lib/dashboardCache";
 
 export const runtime = "nodejs";
 
@@ -98,15 +99,105 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      const student = await tx.student.findUnique({ where: { id }, select: { userId: true } });
-      if (!student) return false;
-      await tx.student.update({ where: { id }, data: { isActive: false } });
-      await tx.user.update({ where: { id: student.userId }, data: { status: "NONAKTIF" } });
-      await tx.auditLog.create({ data: { userId: auth.user.id, action: "DEACTIVATE", entityType: "Student", entityId: id } });
-      return true;
+      const student = await tx.student.findUnique({
+        where: { id },
+        select: { id: true, userId: true, name: true, nis: true },
+      });
+      if (!student) return "NOT_FOUND";
+
+      // 1. Cek pinjaman aktif atau sebagian dikembalikan
+      const activeLoan = await tx.loan.findFirst({
+        where: {
+          studentId: id,
+          status: { in: [LoanStatus.AKTIF, LoanStatus.SEBAGIAN_DIKEMBALIKAN] },
+        },
+      });
+      if (activeLoan) {
+        return "HAS_ACTIVE_LOANS";
+      }
+
+      // 2. Cek tunggakan denda belum dibayar
+      const unpaidFine = await tx.fine.findFirst({
+        where: {
+          loanItem: { loan: { studentId: id } },
+          status: FineStatus.BELUM_DIBAYAR,
+        },
+      });
+      if (unpaidFine) {
+        return "HAS_UNPAID_FINES";
+      }
+
+      // 3. Bersihkan cascading relasi riwayat peminjaman siswa
+      const loans = await tx.loan.findMany({
+        where: { studentId: id },
+        select: { id: true },
+      });
+      const loanIds = loans.map((l) => l.id);
+
+      if (loanIds.length > 0) {
+        const items = await tx.loanItem.findMany({
+          where: { loanId: { in: loanIds } },
+          select: { id: true },
+        });
+        const itemIds = items.map((i) => i.id);
+
+        if (itemIds.length > 0) {
+          const fines = await tx.fine.findMany({
+            where: { loanItemId: { in: itemIds } },
+            select: { id: true },
+          });
+          const fineIds = fines.map((f) => f.id);
+
+          if (fineIds.length > 0) {
+            await tx.finePayment.deleteMany({
+              where: { fineId: { in: fineIds } },
+            });
+            await tx.fine.deleteMany({
+              where: { id: { in: fineIds } },
+            });
+          }
+
+          await tx.loanItem.deleteMany({
+            where: { id: { in: itemIds } },
+          });
+        }
+
+        await tx.loan.deleteMany({
+          where: { id: { in: loanIds } },
+        });
+      }
+
+      // 4. Hapus data student dan user
+      await tx.student.delete({ where: { id } });
+      if (student.userId) {
+        await tx.user.delete({ where: { id: student.userId } });
+      }
+
+      // 5. Catat audit log
+      await tx.auditLog.create({
+        data: {
+          userId: auth.user.id,
+          action: "DELETE",
+          entityType: "Student",
+          entityId: id,
+          oldData: { name: student.name, nis: student.nis },
+        },
+      });
+
+      return "SUCCESS";
     });
-    return result ? new NextResponse(null, { status: 204 }) : jsonError("Anggota tidak ditemukan.", 404);
+
+    if (result === "NOT_FOUND") return jsonError("Anggota tidak ditemukan.", 404);
+    if (result === "HAS_ACTIVE_LOANS") {
+      return jsonError("Tidak dapat menghapus anggota yang masih memiliki pinjaman buku aktif.", 400);
+    }
+    if (result === "HAS_UNPAID_FINES") {
+      return jsonError("Tidak dapat menghapus anggota yang masih memiliki tanggungan denda.", 400);
+    }
+
+    invalidateDashboardCache();
+    return new NextResponse(null, { status: 204 });
   } catch {
-    return jsonError("Terjadi kesalahan pada server.", 500);
+    return jsonError("Terjadi kesalahan pada server saat menghapus data anggota.", 500);
   }
 }

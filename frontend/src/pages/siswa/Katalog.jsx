@@ -11,22 +11,36 @@ import { motion, AnimatePresence } from 'framer-motion';
 import BookCard from '../../siswa/components/BookCard';
 import CatalogHeader from '../../siswa/components/katalog/CatalogHeader';
 import BookDetailModal from '../../siswa/components/katalog/BookDetailModal';
-import { BookService } from '../../services/api';
+import EbookReaderModal from '../../siswa/components/reader/EbookReaderModal';
+import { BookService, CategoryService } from '../../services/api';
+import { getStoredEbooks } from '../../utils/ebookStore';
+import { useAuth } from '../../lib/auth';
 
 export default function KatalogSiswa() {
+  const { user } = useAuth();
   const [bukuList, setBukuList] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [kategoriFilter, setKategoriFilter] = useState('');
   const [bukuTerpilih, setBukuTerpilih] = useState(null);
+  const [readingEbook, setReadingEbook] = useState(null);
 
   useEffect(() => {
     let mounted = true;
+    CategoryService.getAll({ limit: 100 })
+      .then((res) => {
+        if (mounted && res.data?.data) setCategories(res.data.data);
+      })
+      .catch(() => {});
+
     const loadBuku = async () => {
+      let combined = [];
       try {
         const res = await BookService.search({ limit: 100 });
         if (mounted && res.data?.data) {
-          const mapped = res.data.data.map(b => ({
+          combined = res.data.data.map(b => ({
             id: b.id,
+            isEbook: false,
             judul: b.title,
             penulis: b.authors?.map(a => a.name).join(', ') || '-',
             kategori: b.category?.name || 'Lainnya',
@@ -39,10 +53,31 @@ export default function KatalogSiswa() {
             rak: '-',
             deskripsi: b.description || 'Belum ada deskripsi.'
           }));
-          setBukuList(mapped);
         }
       } catch (err) {
         console.error("Gagal memuat katalog dari API:", err);
+      }
+
+      // Merge stored e-books
+      const ebooks = getStoredEbooks().map(eb => ({
+        id: eb.id,
+        isEbook: true,
+        judul: eb.title,
+        penulis: eb.author,
+        kategori: eb.category || 'Digital',
+        sampul: eb.coverUrl || null,
+        tersedia: true,
+        stok: 99,
+        isbn: eb.isbn || '-',
+        penerbit: 'SIMPUS E-Library',
+        tahun: new Date().getFullYear(),
+        rak: 'E-Book Online',
+        deskripsi: eb.description || 'Koleksi buku digital resmi SIMPUS.',
+        fileUrl: eb.fileUrl,
+      }));
+
+      if (mounted) {
+        setBukuList([...combined, ...ebooks]);
       }
     };
     loadBuku();
@@ -71,6 +106,7 @@ export default function KatalogSiswa() {
         setSearchQuery={setSearchQuery}
         kategoriFilter={kategoriFilter}
         setKategoriFilter={setKategoriFilter}
+        categories={categories}
       />
 
       {/* Grid Kartu Koleksi Buku */}
@@ -118,7 +154,21 @@ export default function KatalogSiswa() {
       {bukuTerpilih && (
         <BookDetailModal
           buku={bukuTerpilih}
+          student={user}
           onClose={() => setBukuTerpilih(null)}
+          onOpenReader={(ebk) => {
+            setBukuTerpilih(null);
+            setReadingEbook(ebk);
+          }}
+        />
+      )}
+
+      {/* Secure DRM E-Book Reader Modal */}
+      {readingEbook && (
+        <EbookReaderModal
+          ebook={readingEbook}
+          student={user}
+          onClose={() => setReadingEbook(null)}
         />
       )}
     </div>

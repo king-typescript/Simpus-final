@@ -62,6 +62,16 @@ model LibrarySetting {
   @@map("library_settings")
 }
 
+model SchoolClass {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("school_classes")
+}
+
 model User {
   id           String     @id @default(uuid())
   role         UserRole   @default(SISWA)
@@ -136,6 +146,9 @@ model Book {
   isActive        Boolean  @default(true)
   publisher       String?
   publicationYear Int?
+  pageCount       Int?
+  isEbook         Boolean  @default(false)
+  fileUrl         String?
   edition         String?
   description     String?
   coverUrl        String?
@@ -150,6 +163,7 @@ model Book {
   @@index([title])
   @@index([categoryId])
   @@index([isActive])
+  @@index([isEbook])
   @@map("books")
 }
 

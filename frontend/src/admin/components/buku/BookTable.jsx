@@ -42,9 +42,16 @@ export function BookTable({ books, onEdit, onDelete }) {
                         <BookOpen size={16} />
                       </div>
                       <div>
-                        <p className="font-semibold text-slate-900 text-sm">
-                          {book.title}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-slate-900 text-sm">
+                            {book.title}
+                          </p>
+                          {book.isEbook && (
+                            <span className="rounded-md bg-purple-100 px-1.5 py-0.5 text-[10px] font-bold text-purple-700">
+                              E-BOOK
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-slate-400">{book.author}</p>
                       </div>
                     </div>

@@ -25,6 +25,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: simpus_app
+    command: ["pnpm", "start"]
     restart: unless-stopped
     # Hanya bind ke localhost (127.0.0.1) agar port 3000 tidak bisa diakses langsung dari publik tanpa melalui Nginx
     ports:

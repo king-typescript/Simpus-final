@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, GraduationCap } from "lucide-react";
 import { PageHeader } from "../../components/common/PageHeader";
 import { SearchInput } from "../../components/common/SearchInput";
 import { ViewToggle } from "../../components/common/ViewToggle";
@@ -8,74 +8,13 @@ import { MemberModal } from "../../admin/components/anggota/MemberModal";
 import { MemberCardModal } from "../../admin/components/anggota/MemberCardModal";
 import { MemberTable } from "../../admin/components/anggota/MemberTable";
 import { MemberGridCard } from "../../admin/components/anggota/MemberGridCard";
-import { MemberService } from "../../services/api";
+import { ClassManagerModal } from "../../admin/components/anggota/ClassManagerModal";
+import { MemberService, ClassService } from "../../services/api";
 import { useNotification } from "../../context/NotificationContext";
-
-const initialMembers = [
-  {
-    id: 1,
-    nis: "20260001",
-    name: "Ahmad Fauzan",
-    className: "XII IPA 1",
-    phone: "081234567890",
-    status: "Aktif",
-    joined: "10 Jan 2026",
-  },
-  {
-    id: 2,
-    nis: "20260002",
-    name: "Siti Rahma",
-    className: "XI IPA 2",
-    phone: "081234567891",
-    status: "Aktif",
-    joined: "11 Jan 2026",
-  },
-  {
-    id: 3,
-    nis: "20260003",
-    name: "Budi Santoso",
-    className: "X IPS 1",
-    phone: "081234567892",
-    status: "Aktif",
-    joined: "12 Jan 2026",
-  },
-  {
-    id: 4,
-    nis: "20260004",
-    name: "Nur Aisyah",
-    className: "XII IPS 2",
-    phone: "081234567893",
-    status: "Aktif",
-    joined: "13 Jan 2026",
-  },
-  {
-    id: 5,
-    nis: "20260005",
-    name: "Rizky Maulana",
-    className: "XI IPA 1",
-    phone: "081234567894",
-    status: "Nonaktif",
-    joined: "14 Jan 2026",
-  },
-];
-
-const classOptions = [
-  "X IPA 1",
-  "X IPA 2",
-  "X IPS 1",
-  "X IPS 2",
-  "XI IPA 1",
-  "XI IPA 2",
-  "XI IPS 1",
-  "XI IPS 2",
-  "XII IPA 1",
-  "XII IPA 2",
-  "XII IPS 1",
-  "XII IPS 2",
-];
 
 function Anggota() {
   const [members, setMembers] = useState([]);
+  const [classes, setClasses] = useState([]);
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState("Semua");
   const [statusFilter, setStatusFilter] = useState("Semua");
@@ -85,6 +24,7 @@ function Anggota() {
 
   const [showModal, setShowModal] = useState(false);
   const [showCardModal, setShowCardModal] = useState(false);
+  const [showClassModal, setShowClassModal] = useState(false);
   const [selectedMember, setSelectedMember] = useState(null);
 
   const [form, setForm] = useState({
@@ -124,35 +64,20 @@ function Anggota() {
     }
   };
 
-  useEffect(() => {
-    let mounted = true;
-    const loadMembers = async () => {
-      try {
-        const res = await MemberService.getAll({ limit: 100 });
-        if (mounted && res.data?.data) {
-          const apiMembers = res.data.data.map(m => ({
-            id: m.id,
-            nis: m.nis,
-            name: m.name,
-            className: m.className,
-            phone: m.phone || "-",
-            status: m.isActive ? "Aktif" : "Nonaktif",
-            joined: m.joinedAt ? new Date(m.joinedAt).toLocaleDateString("id-ID", {
-              day: "2-digit",
-              month: "short",
-              year: "numeric"
-            }) : "-",
-          }));
-
-          setMembers(apiMembers);
-        }
-      } catch (err) {
-        console.error("Gagal memuat anggota dari backend:", err);
+  const fetchClasses = async () => {
+    try {
+      const res = await ClassService.getAll();
+      if (res.data?.data) {
+        setClasses(res.data.data);
       }
-    };
+    } catch (err) {
+      console.error("Gagal memuat kelas:", err);
+    }
+  };
 
-    loadMembers();
-    return () => { mounted = false; };
+  useEffect(() => {
+    fetchMembers();
+    fetchClasses();
   }, []);
 
   const filteredMembers = useMemo(() => {
@@ -271,9 +196,9 @@ function Anggota() {
     const memberName = memberTarget ? memberTarget.name : "anggota ini";
 
     showConfirm({
-      title: "Nonaktifkan Anggota?",
-      message: `Apakah Anda yakin ingin menonaktifkan ${memberName}? Akun tidak akan dapat meminjam buku sebelum diaktifkan kembali.`,
-      confirmText: "Ya, Nonaktifkan",
+      title: "Hapus Anggota?",
+      message: `Apakah Anda yakin ingin menghapus data anggota ${memberName}? Data keanggotaan dan akun siswa akan dihapus permanen dari sistem.`,
+      confirmText: "Ya, Hapus Permanen",
       cancelText: "Batal",
       confirmVariant: "danger",
       onConfirm: async () => {
@@ -282,9 +207,9 @@ function Anggota() {
             await MemberService.delete(id);
           }
           await fetchMembers();
-          showSuccess("Berhasil", `Anggota ${memberName} telah dinonaktifkan.`);
+          showSuccess("Berhasil Dihapus", `Data anggota ${memberName} telah berhasil dihapus dari sistem.`);
         } catch (err) {
-          showError("Gagal", err?.response?.data?.error || "Gagal menonaktifkan anggota.");
+          showError("Gagal Menghapus", err?.response?.data?.error || "Gagal menghapus data anggota.");
         }
       },
     });
@@ -297,13 +222,23 @@ function Anggota() {
         title="Anggota Perpustakaan"
         subtitle="Kelola data siswa yang terdaftar di perpustakaan."
       >
-        <button
-          onClick={openAddModal}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 sm:px-5 sm:py-3 text-xs sm:text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-95 w-full sm:w-auto"
-        >
-          <Plus size={16} />
-          Tambah Anggota
-        </button>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setShowClassModal(true)}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-95 cursor-pointer flex-1 sm:flex-none"
+          >
+            <GraduationCap size={15} />
+            Kelola Kelas
+          </button>
+          <button
+            onClick={openAddModal}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 sm:px-5 sm:py-2.5 text-xs sm:text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-95 flex-1 sm:flex-none"
+          >
+            <Plus size={16} />
+            Tambah Anggota
+          </button>
+        </div>
       </PageHeader>
 
       {/* Stats */}
@@ -337,9 +272,9 @@ function Anggota() {
               className="flex-1 sm:w-44 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs sm:text-sm text-slate-700 outline-none focus:border-blue-500"
             >
               <option value="Semua">Semua Kelas</option>
-              {classOptions.map((item) => (
-                <option key={item} value={item}>
-                  {item}
+              {classes.map((cls) => (
+                <option key={cls.id || cls.name} value={cls.name}>
+                  {cls.name}
                 </option>
               ))}
             </select>
@@ -387,9 +322,19 @@ function Anggota() {
         onClose={() => setShowModal(false)}
         selectedMember={selectedMember}
         form={form}
+        classes={classes}
         onChange={handleChange}
         onSubmit={handleSubmit}
+        onOpenClassManager={() => setShowClassModal(true)}
         submitting={submitting}
+      />
+
+      {/* Class Manager Modal */}
+      <ClassManagerModal
+        open={showClassModal}
+        onClose={() => setShowClassModal(false)}
+        classes={classes}
+        onClassesChange={fetchClasses}
       />
 
       {/* Member Card Preview Modal */}

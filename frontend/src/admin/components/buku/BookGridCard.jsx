@@ -10,9 +10,16 @@ export function BookGridCard({ book, onEdit, onDelete }) {
             <BookOpen size={18} />
           </div>
           <div className="min-w-0">
-            <h3 className="font-semibold text-slate-900 text-sm truncate">
-              {book.title}
-            </h3>
+            <div className="flex items-center gap-1.5">
+              <h3 className="font-semibold text-slate-900 text-sm truncate">
+                {book.title}
+              </h3>
+              {book.isEbook && (
+                <span className="shrink-0 rounded bg-purple-100 px-1.5 py-0.5 text-[9px] font-bold text-purple-700">
+                  E-BOOK
+                </span>
+              )}
+            </div>
             <p className="text-xs text-slate-500 truncate">{book.author}</p>
           </div>
         </div>
