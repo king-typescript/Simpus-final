@@ -21,7 +21,6 @@ export default function CatalogHeader({
           Katalog Buku
         </h2>
         <p className="text-xs sm:text-sm text-text-sekunder mt-0.5">
-          Temukan buku favorit dan cek ketersediaan stok
         </p>
       </div>
 
