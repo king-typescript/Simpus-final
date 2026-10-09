@@ -8,7 +8,7 @@ const typeStyle = {
   fine: "bg-orange-100 text-orange-700",
 };
 
-export function RecentActivity({ activities }) {
+export function RecentActivity({ activities = [], loading = false }) {
   const navigate = useNavigate();
 
   return (
@@ -19,37 +19,53 @@ export function RecentActivity({ activities }) {
             Aktivitas Terbaru
           </h2>
           <p className="mt-0.5 text-xs sm:text-sm text-slate-500">
-            Aktivitas hari ini
+            Aktivitas sirkulasi
           </p>
         </div>
       </div>
 
       <div className="mt-4 sm:mt-5 space-y-3 flex-1">
-        {activities.map((item, i) => (
-          <div
-            key={i}
-            className="flex items-start gap-3 rounded-xl p-2.5 transition hover:bg-slate-50/80"
-          >
+        {loading ? (
+          [1, 2, 3].map((n) => (
+            <div key={n} className="flex items-start gap-3 rounded-xl p-2.5 animate-pulse">
+              <div className="h-9 w-9 rounded-full bg-slate-200 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="h-3.5 w-3/4 rounded bg-slate-200" />
+                <div className="h-3 w-1/2 rounded bg-slate-100" />
+              </div>
+            </div>
+          ))
+        ) : activities.length > 0 ? (
+          activities.map((item, i) => (
             <div
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-bold text-xs ${
-                typeStyle[item.type] || "bg-slate-100 text-slate-700"
-              }`}
+              key={i}
+              className="flex items-start gap-3 rounded-xl p-2.5 transition hover:bg-slate-50/80"
             >
-              {item.name.charAt(0)}
-            </div>
+              <div
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-bold text-xs ${
+                  typeStyle[item.type] || "bg-slate-100 text-slate-700"
+                }`}
+              >
+                {item.name.charAt(0)}
+              </div>
 
-            <div className="min-w-0 flex-1">
-              <p className="text-xs sm:text-sm text-slate-700 leading-tight">
-                <span className="font-semibold text-slate-900">{item.name}</span>{" "}
-                {item.action}
-              </p>
-              <p className="mt-0.5 truncate text-[11px] sm:text-xs text-slate-500">
-                {item.detail}
-              </p>
-              <p className="mt-0.5 text-[10px] text-slate-400">{item.time}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs sm:text-sm text-slate-700 leading-tight">
+                  <span className="font-semibold text-slate-900">{item.name}</span>{" "}
+                  {item.action}
+                </p>
+                <p className="mt-0.5 truncate text-[11px] sm:text-xs text-slate-500">
+                  {item.detail}
+                </p>
+                <p className="mt-0.5 text-[10px] text-slate-400">{item.time}</p>
+              </div>
             </div>
+          ))
+        ) : (
+          <div className="py-8 text-center text-xs text-slate-400">
+            Belum ada aktivitas sirkulasi terbaru.
           </div>
-        ))}
+        )}
       </div>
 
       <button

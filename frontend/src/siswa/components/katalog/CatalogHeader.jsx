@@ -5,15 +5,8 @@ export default function CatalogHeader({
   setSearchQuery,
   kategoriFilter,
   setKategoriFilter,
+  categories = [],
 }) {
-  const kategoriList = [
-    { value: '', label: 'Semua Kategori' },
-    { value: 'Teknologi', label: 'Teknologi' },
-    { value: 'Sastra', label: 'Sastra & Novel' },
-    { value: 'Sains', label: 'Sains' },
-    { value: 'Pengembangan Diri', label: 'Pengembangan Diri' },
-  ];
-
   return (
     <div className="bg-white p-5 sm:p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all duration-300">
       <div>
@@ -46,9 +39,10 @@ export default function CatalogHeader({
           onChange={(e) => setKategoriFilter(e.target.value)}
           className="w-full sm:w-48 px-4 py-2.5 bg-gray-50/50 text-text-sekunder text-xs sm:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-light-blue border border-gray-200 rounded-2xl cursor-pointer transition-all"
         >
-          {kategoriList.map((kat) => (
-            <option key={kat.value} value={kat.value}>
-              {kat.label}
+          <option value="">Semua Kategori</option>
+          {categories.map((kat) => (
+            <option key={kat.id || kat.name} value={kat.name}>
+              {kat.name}
             </option>
           ))}
         </select>

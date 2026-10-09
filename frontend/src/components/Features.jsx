@@ -36,37 +36,36 @@ const FEATURES = [
 
 export default function Features() {
   return (
-    <section id="informasi" className="scroll-mt-20 bg-white py-12 font-poppins sm:py-16">
-      <div className="container-page grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4 lg:divide-x lg:divide-slate-200/80">
-        {FEATURES.map(({ icon, iconAlt, bg, title, desc }) => (
-          <div key={title} className="flex flex-col items-center px-4 text-center">
+    <section id="informasi" className="scroll-mt-20 bg-gradient-to-b from-white via-slate-50/50 to-white py-12 sm:py-16 font-poppins">
+      <div className="container-page">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 sm:gap-6">
+          {FEATURES.map(({ icon, iconAlt, bg, title, desc }) => (
             <div
-              className="mb-5 flex h-[80px] w-[80px] items-center justify-center transition-transform motion-safe:hover:scale-105 sm:mb-6 sm:h-[94px] sm:w-[94px]"
-              style={{ backgroundColor: bg, borderRadius: "25px" }}
+              key={title}
+              className="group flex flex-col items-center rounded-3xl border border-slate-100 bg-white p-6 text-center shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-slate-200/80 hover:shadow-xl sm:p-7"
             >
-              <img
-                src={icon}
-                alt={iconAlt}
-                className="h-[40px] w-[40px] object-contain sm:h-[50px] sm:w-[50px]"
-                loading="lazy"
-              />
+              <div
+                className="mb-4 flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-105 shadow-sm"
+                style={{ backgroundColor: bg }}
+              >
+                <img
+                  src={icon}
+                  alt={iconAlt}
+                  className="h-7 w-7 sm:h-8 sm:w-8 object-contain"
+                  loading="lazy"
+                />
+              </div>
+
+              <h3 className="text-base sm:text-lg font-bold text-navy-900 leading-snug">
+                {title}
+              </h3>
+
+              <p className="mt-2 text-xs sm:text-sm text-slate-copy leading-relaxed">
+                {desc}
+              </p>
             </div>
-
-            <h3
-              style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, color: "#000000" }}
-              className="text-xl leading-snug sm:text-2xl lg:text-[26px]"
-            >
-              {title}
-            </h3>
-
-            <p
-              style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 400, color: "#000000" }}
-              className="mt-2 max-w-[280px] text-sm leading-relaxed sm:mt-3 sm:max-w-[240px] sm:text-[15px]"
-            >
-              {desc}
-            </p>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </section>
   );

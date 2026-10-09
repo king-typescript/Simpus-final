@@ -1,27 +1,15 @@
+import { Settings } from "lucide-react";
 import { Modal } from "../../../components/common/Modal";
-
-const classOptions = [
-  "X IPA 1",
-  "X IPA 2",
-  "X IPS 1",
-  "X IPS 2",
-  "XI IPA 1",
-  "XI IPA 2",
-  "XI IPS 1",
-  "XI IPS 2",
-  "XII IPA 1",
-  "XII IPA 2",
-  "XII IPS 1",
-  "XII IPS 2",
-];
 
 export function MemberModal({
   open,
   onClose,
   selectedMember,
   form,
+  classes = [],
   onChange,
   onSubmit,
+  onOpenClassManager,
   submitting = false,
 }) {
   return (
@@ -63,9 +51,18 @@ export function MemberModal({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700">
-              Kelas *
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-semibold text-slate-700">
+                Kelas *
+              </label>
+              <button
+                type="button"
+                onClick={onOpenClassManager}
+                className="text-[11px] text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 cursor-pointer"
+              >
+                <Settings size={12} /> Kelola Kelas
+              </button>
+            </div>
             <select
               name="className"
               value={form.className}
@@ -74,9 +71,9 @@ export function MemberModal({
               className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs sm:text-sm outline-none focus:border-blue-500"
             >
               <option value="">Pilih kelas</option>
-              {classOptions.map((item) => (
-                <option key={item} value={item}>
-                  {item}
+              {classes.map((item) => (
+                <option key={item.id || item.name} value={item.name}>
+                  {item.name}
                 </option>
               ))}
             </select>
@@ -88,7 +85,7 @@ export function MemberModal({
             </label>
             <input
               name="phone"
-              value={form.phone}
+              value={form.phone || ""}
               onChange={onChange}
               placeholder="08xxxxxxxxxx"
               className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs sm:text-sm outline-none focus:border-blue-500"

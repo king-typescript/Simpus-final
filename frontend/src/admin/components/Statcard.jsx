@@ -6,6 +6,7 @@ export default function Statcard({
   color = "blue",
   onClick,
   className = "",
+  loading = false,
 }) {
   const colorMap = {
     blue: {
@@ -62,13 +63,17 @@ export default function Statcard({
           <p className="text-xs sm:text-sm font-medium text-slate-500 truncate">
             {title}
           </p>
-          <h2
-            className={`mt-1.5 text-xl sm:text-2xl font-bold ${
-              Icon ? "text-slate-900" : style.value
-            }`}
-          >
-            {value}
-          </h2>
+          {loading ? (
+            <div className="mt-2 h-7 w-16 animate-pulse rounded-lg bg-slate-200" />
+          ) : (
+            <h2
+              className={`mt-1.5 text-xl sm:text-2xl font-bold ${
+                Icon ? "text-slate-900" : style.value
+              }`}
+            >
+              {value}
+            </h2>
+          )}
         </div>
         {Icon && (
           <div

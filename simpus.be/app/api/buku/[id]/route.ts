@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { noStoreHeaders, requireLibrarian } from "@/lib/auth";
+import { invalidateDashboardCache } from "@/lib/dashboardCache";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -8,21 +9,13 @@ type Context = { params: Promise<{ id: string }> };
 function errorResponse(error: string, status: number) {
   return NextResponse.json({ error }, { status, headers: noStoreHeaders });
 }
+
 function uuid(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
+
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function validCoverUrl(value: string | null) {
-  if (value === null) return true;
-
-  try {
-    return new URL(value).protocol === "https:";
-  } catch {
-    return false;
-  }
 }
 
 function jsonValue(value: unknown) {
@@ -30,77 +23,141 @@ function jsonValue(value: unknown) {
 }
 
 const detailSelect = {
-  id: true, isbn: true, title: true, isActive: true, publisher: true, publicationYear: true,
-  edition: true, description: true, coverUrl: true, createdAt: true, updatedAt: true,
+  id: true,
+  isbn: true,
+  title: true,
+  isActive: true,
+  publisher: true,
+  publicationYear: true,
+  pageCount: true,
+  isEbook: true,
+  fileUrl: true,
+  edition: true,
+  description: true,
+  coverUrl: true,
+  createdAt: true,
+  updatedAt: true,
   category: { select: { id: true, name: true, ddcCode: true, description: true } },
   authors: { select: { id: true, name: true }, orderBy: { name: "asc" as const } },
-  copies: { select: { id: true, barcode: true, status: true, conditionNote: true, acquiredAt: true, shelf: { select: { id: true, code: true, name: true, location: true } } }, orderBy: { barcode: "asc" as const } },
+  copies: {
+    select: {
+      id: true,
+      barcode: true,
+      status: true,
+      conditionNote: true,
+      acquiredAt: true,
+      shelf: { select: { id: true, code: true, name: true, location: true } },
+    },
+    orderBy: { barcode: "asc" as const },
+  },
 } as const;
 
 export async function GET(_request: Request, context: Context) {
   const { id } = await context.params;
   if (!uuid(id)) return errorResponse("ID buku tidak valid.", 422);
+
   try {
-    const data = await prisma.book.findFirst({ where: { id, isActive: true, category: { is: { isActive: true } } }, select: detailSelect });
-    return data ? NextResponse.json({ data }, { headers: noStoreHeaders }) : errorResponse("Buku tidak ditemukan.", 404);
-  } catch { return errorResponse("Terjadi kesalahan pada server.", 500); }
+    const data = await prisma.book.findFirst({
+      where: { id, isActive: true, category: { is: { isActive: true } } },
+      select: detailSelect,
+    });
+
+    if (!data) return errorResponse("Buku tidak ditemukan.", 404);
+
+    const firstShelf = data.copies.find((c) => c.shelf)?.shelf?.name || null;
+    return NextResponse.json(
+      { data: { ...data, shelf: firstShelf } },
+      { headers: noStoreHeaders }
+    );
+  } catch {
+    return errorResponse("Terjadi kesalahan pada server.", 500);
+  }
 }
 
 export async function PATCH(request: Request, context: Context) {
   const auth = await requireLibrarian();
   if (!auth.ok) return errorResponse("Tidak memiliki akses.", auth.status);
+
   const { id } = await context.params;
   if (!uuid(id)) return errorResponse("ID buku tidak valid.", 422);
+
   let body: unknown;
   try { body = await request.json(); } catch { return errorResponse("Body JSON tidak valid.", 400); }
   if (!record(body)) return errorResponse("Body request tidak valid.", 422);
 
-  const data: { isbn?: string | null; title?: string; publisher?: string | null; publicationYear?: number | null; edition?: string | null; description?: string | null; coverUrl?: string | null; categoryId?: string } = {};
+  const data: {
+    isbn?: string | null;
+    title?: string;
+    publisher?: string | null;
+    publicationYear?: number | null;
+    pageCount?: number | null;
+    edition?: string | null;
+    description?: string | null;
+    coverUrl?: string | null;
+    fileUrl?: string | null;
+    isEbook?: boolean;
+    categoryId?: string;
+  } = {};
+
   if ("isbn" in body) {
     if (body.isbn !== null && typeof body.isbn !== "string") return errorResponse("ISBN tidak valid.", 422);
     const value = typeof body.isbn === "string" && body.isbn.trim() ? body.isbn.trim() : null;
-    if (value !== null && (value.length > 20 || !/^[0-9Xx-]{10,17}$/.test(value))) return errorResponse("ISBN tidak valid.", 422);
+    if (value !== null && value.length > 20) return errorResponse("ISBN tidak valid.", 422);
     data.isbn = value;
   }
+
   if ("title" in body) {
     if (typeof body.title !== "string" || !body.title.trim() || body.title.trim().length > 300) return errorResponse("Judul tidak valid.", 422);
     data.title = body.title.trim();
   }
-  for (const field of ["publisher", "edition", "description", "coverUrl"] as const) {
+
+  for (const field of ["publisher", "edition", "description", "coverUrl", "fileUrl"] as const) {
     if (field in body) {
-        if (body[field] !== null && typeof body[field] !== "string") return errorResponse(`${field} tidak valid.`, 422);
+      if (body[field] !== null && typeof body[field] !== "string") return errorResponse(`${field} tidak valid.`, 422);
       const value = typeof body[field] === "string" && body[field].trim() ? body[field].trim() : null;
-      const maximum = field === "publisher" ? 200 : field === "edition" ? 100 : field === "description" ? 5000 : 2048;
-      if (value !== null && (value.length > maximum || (field === "coverUrl" && !validCoverUrl(value)))) return errorResponse(`${field} tidak valid.`, 422);
       data[field] = value;
     }
   }
+
+  if ("isEbook" in body) {
+    data.isEbook = Boolean(body.isEbook);
+  }
+
+  if ("pageCount" in body) {
+    if (body.pageCount !== null && (typeof body.pageCount !== "number" || !Number.isInteger(body.pageCount) || body.pageCount < 1)) {
+      return errorResponse("Jumlah halaman tidak valid.", 422);
+    }
+    data.pageCount = body.pageCount as number | null;
+  }
+
   if ("publicationYear" in body) {
-    if (body.publicationYear !== null && (typeof body.publicationYear !== "number" || !Number.isInteger(body.publicationYear) || body.publicationYear < 1000 || body.publicationYear > new Date().getFullYear() + 1)) return errorResponse("Tahun terbit tidak valid.", 422);
+    if (body.publicationYear !== null && (typeof body.publicationYear !== "number" || !Number.isInteger(body.publicationYear) || body.publicationYear < 1000 || body.publicationYear > new Date().getFullYear() + 1)) {
+      return errorResponse("Tahun terbit tidak valid.", 422);
+    }
     data.publicationYear = body.publicationYear as number | null;
   }
-  if ("categoryId" in body) {
-    if (body.categoryId !== null && typeof body.categoryId === "string" && uuid(body.categoryId)) {
-      data.categoryId = body.categoryId;
-    }
+
+  if ("categoryId" in body && body.categoryId !== null && typeof body.categoryId === "string" && uuid(body.categoryId)) {
+    data.categoryId = body.categoryId;
   }
 
   const categoryName = typeof body.categoryName === "string" && body.categoryName.trim() ? body.categoryName.trim() : undefined;
   const authorName = typeof body.authorName === "string" && body.authorName.trim() ? body.authorName.trim() : undefined;
   const authorIds = "authorIds" in body ? body.authorIds : undefined;
-  if (authorIds !== undefined && (!Array.isArray(authorIds) || !authorIds.length || authorIds.length > 20 || !authorIds.every(uuid))) return errorResponse("Daftar penulis tidak valid.", 422);
+  if (authorIds !== undefined && (!Array.isArray(authorIds) || !authorIds.length || authorIds.length > 20 || !authorIds.every(uuid))) {
+    return errorResponse("Daftar penulis tidak valid.", 422);
+  }
 
+  const shelfName = typeof body.shelf === "string" ? body.shelf.trim() : undefined;
   const newStock = typeof body.stock === "number" && Number.isInteger(body.stock) && body.stock >= 0 ? body.stock : undefined;
-
-  if (!Object.keys(data).length && authorIds === undefined && !categoryName && !authorName && newStock === undefined) return errorResponse("Tidak ada perubahan.", 422);
 
   try {
     const updated = await prisma.$transaction(async (tx) => {
-      const existingBook = await tx.book.findFirst({ where: { id, isActive: true }, select: { id: true, categoryId: true } });
+      const existingBook = await tx.book.findFirst({ where: { id, isActive: true }, select: { id: true, categoryId: true, isEbook: true } });
       if (!existingBook) return null;
 
       if (!data.categoryId && categoryName) {
-        const existingCategory = await tx.category.findFirst({
+        let existingCategory = await tx.category.findFirst({
           where: { name: { equals: categoryName, mode: "insensitive" } },
         });
         if (existingCategory) {
@@ -117,7 +174,9 @@ export async function PATCH(request: Request, context: Context) {
         }
       }
 
-      if (data.categoryId && !(await tx.category.findFirst({ where: { id: data.categoryId, isActive: true }, select: { id: true } }))) throw new Error("CATEGORY_NOT_FOUND");
+      if (data.categoryId && !(await tx.category.findFirst({ where: { id: data.categoryId, isActive: true }, select: { id: true } }))) {
+        throw new Error("CATEGORY_NOT_FOUND");
+      }
 
       let uniqueAuthors = authorIds === undefined ? undefined : [...new Set(authorIds)];
       if (!uniqueAuthors && authorName) {
@@ -135,6 +194,32 @@ export async function PATCH(request: Request, context: Context) {
         if (count !== uniqueAuthors.length) throw new Error("AUTHOR_NOT_FOUND");
       }
 
+      // Resolve shelf update
+      let resolvedShelfId: string | null | undefined = undefined;
+      if (shelfName !== undefined) {
+        if (shelfName) {
+          let existingShelf = await tx.shelf.findFirst({
+            where: {
+              OR: [
+                { code: { equals: shelfName, mode: "insensitive" } },
+                { name: { equals: shelfName, mode: "insensitive" } },
+              ],
+            },
+          });
+          if (!existingShelf) {
+            existingShelf = await tx.shelf.create({
+              data: {
+                code: shelfName.toUpperCase().replace(/\s+/g, "-"),
+                name: shelfName,
+              },
+            });
+          }
+          resolvedShelfId = existingShelf.id;
+        } else {
+          resolvedShelfId = null;
+        }
+      }
+
       await tx.book.update({
         where: { id },
         data: {
@@ -144,7 +229,16 @@ export async function PATCH(request: Request, context: Context) {
         select: detailSelect,
       });
 
-      if (newStock !== undefined) {
+      // Update shelf on existing copies if shelf was updated
+      if (resolvedShelfId !== undefined) {
+        await tx.bookCopy.updateMany({
+          where: { bookId: id },
+          data: { shelfId: resolvedShelfId },
+        });
+      }
+
+      // Stock adjustment for physical books
+      if (newStock !== undefined && !data.isEbook) {
         const currentCopies = await tx.bookCopy.findMany({
           where: { bookId: id, isActive: true },
           select: { id: true, status: true },
@@ -154,6 +248,7 @@ export async function PATCH(request: Request, context: Context) {
           const countToAdd = newStock - currentCopies.length;
           const copiesData = Array.from({ length: countToAdd }).map((_, i) => ({
             bookId: id,
+            shelfId: resolvedShelfId !== undefined ? resolvedShelfId : null,
             barcode: `BC-${Date.now().toString().slice(-6)}-${currentCopies.length + i + 1}`,
             status: "TERSEDIA" as const,
             isActive: true,
@@ -174,9 +269,23 @@ export async function PATCH(request: Request, context: Context) {
       }
 
       const finalBook = await tx.book.findUnique({ where: { id }, select: detailSelect });
-      await tx.auditLog.create({ data: { userId: auth.user.id, action: "UPDATE", entityType: "Book", entityId: id, newData: jsonValue(finalBook) } });
-      return finalBook;
+      await tx.auditLog.create({
+        data: {
+          userId: auth.user.id,
+          action: "UPDATE",
+          entityType: "Book",
+          entityId: id,
+          newData: jsonValue(finalBook),
+        },
+      });
+
+      invalidateDashboardCache();
+      return {
+        ...finalBook,
+        shelf: shelfName !== undefined ? shelfName : finalBook?.copies.find(c => c.shelf)?.shelf?.name || null,
+      };
     });
+
     return updated ? NextResponse.json({ data: updated }, { headers: noStoreHeaders }) : errorResponse("Buku tidak ditemukan.", 404);
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "CATEGORY_NOT_FOUND") return errorResponse("Kategori tidak ditemukan.", 422);
@@ -191,13 +300,98 @@ export async function DELETE(_request: Request, context: Context) {
   if (!auth.ok) return errorResponse("Tidak memiliki akses.", auth.status);
   const { id } = await context.params;
   if (!uuid(id)) return errorResponse("ID buku tidak valid.", 422);
+
   try {
-    const deleted = await prisma.$transaction(async (tx) => {
-      if (!(await tx.book.findFirst({ where: { id, isActive: true }, select: { id: true } }))) return false;
-      await tx.book.update({ where: { id }, data: { isActive: false } });
-      await tx.auditLog.create({ data: { userId: auth.user.id, action: "DEACTIVATE", entityType: "Book", entityId: id } });
-      return true;
+    const result = await prisma.$transaction(async (tx) => {
+      const book = await tx.book.findFirst({
+        where: { id },
+        select: {
+          id: true,
+          title: true,
+          isbn: true,
+          copies: {
+            select: { id: true, status: true },
+          },
+        },
+      });
+
+      if (!book) return "NOT_FOUND";
+
+      const hasBorrowedCopy = book.copies.some((c) => c.status === "DIPINJAM");
+      if (hasBorrowedCopy) {
+        return "HAS_BORROWED_COPIES";
+      }
+
+      const copyIds = book.copies.map((c) => c.id);
+      const loanCount = copyIds.length > 0
+        ? await tx.loanItem.count({ where: { copyId: { in: copyIds } } })
+        : 0;
+
+      if (loanCount > 0) {
+        await tx.book.update({
+          where: { id },
+          data: { isActive: false },
+        });
+
+        if (copyIds.length > 0) {
+          await tx.bookCopy.updateMany({
+            where: { id: { in: copyIds } },
+            data: { isActive: false },
+          });
+        }
+
+        await tx.auditLog.create({
+          data: {
+            userId: auth.user.id,
+            action: "ARCHIVE",
+            entityType: "Book",
+            entityId: id,
+            oldData: { title: book.title, isbn: book.isbn, copyCount: book.copies.length, loanHistoryCount: loanCount },
+          },
+        });
+
+        return "ARCHIVED";
+      } else {
+        if (copyIds.length > 0) {
+          await tx.bookCopy.deleteMany({
+            where: { id: { in: copyIds } },
+          });
+        }
+
+        await tx.book.delete({
+          where: { id },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            userId: auth.user.id,
+            action: "DELETE",
+            entityType: "Book",
+            entityId: id,
+            oldData: { title: book.title, isbn: book.isbn, copyCount: book.copies.length },
+          },
+        });
+
+        return "DELETED";
+      }
     });
-    return deleted ? new NextResponse(null, { status: 204 }) : errorResponse("Buku tidak ditemukan.", 404);
-  } catch { return errorResponse("Terjadi kesalahan pada server.", 500); }
+
+    if (result === "NOT_FOUND") return errorResponse("Buku tidak ditemukan.", 404);
+    if (result === "HAS_BORROWED_COPIES") {
+      return errorResponse("Buku tidak dapat dihapus karena masih ada eksemplar yang sedang dipinjam.", 400);
+    }
+
+    invalidateDashboardCache();
+
+    if (result === "ARCHIVED") {
+      return NextResponse.json(
+        { data: { action: "ARCHIVED" }, message: "Buku dan seluruh eksemplar berhasil diarsipkan karena memiliki riwayat sirkulasi." },
+        { status: 200, headers: noStoreHeaders }
+      );
+    }
+
+    return new NextResponse(null, { status: 204, headers: noStoreHeaders });
+  } catch {
+    return errorResponse("Terjadi kesalahan pada server saat menghapus buku.", 500);
+  }
 }

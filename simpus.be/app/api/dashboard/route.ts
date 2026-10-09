@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { BookStatus, FineStatus, LoanStatus, Prisma } from "@/app/generated/prisma/client";
 import { noStoreHeaders, requireAuthenticatedUser } from "@/lib/auth";
 import { calculateDaysLate } from "@/lib/fine";
+import { getCachedDashboard, setCachedDashboard } from "@/lib/dashboardCache";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -117,9 +118,19 @@ export async function GET() {
   const auth = await requireAuthenticatedUser();
   if (!auth.ok) return errorResponse("Tidak memiliki akses.", auth.status);
 
+  const cacheKey = `${auth.user.role}:${auth.user.id}`;
+  const cached = getCachedDashboard(cacheKey);
+  if (cached) {
+    return NextResponse.json(cached as Record<string, unknown>, {
+      headers: { ...noStoreHeaders, "X-Cache": "HIT" },
+    });
+  }
+
   try {
     const dashboard = auth.user.role === "PUSTAKAWAN" ? await getLibrarianDashboard() : await getStudentDashboard(auth.user.id);
-    return NextResponse.json({ ...dashboard, generatedAt: new Date() }, { headers: noStoreHeaders });
+    const payload = { ...dashboard, generatedAt: new Date() };
+    setCachedDashboard(cacheKey, payload);
+    return NextResponse.json(payload, { headers: { ...noStoreHeaders, "X-Cache": "MISS" } });
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "STUDENT_NOT_FOUND") return errorResponse("Data siswa tidak ditemukan.", 404);
     return errorResponse("Terjadi kesalahan pada server.", 500);

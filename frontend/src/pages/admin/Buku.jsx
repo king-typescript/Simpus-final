@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Tag } from "lucide-react";
 import { PageHeader } from "../../components/common/PageHeader";
 import { SearchInput } from "../../components/common/SearchInput";
 import { ViewToggle } from "../../components/common/ViewToggle";
@@ -7,71 +7,9 @@ import Statcard from "../../admin/components/Statcard";
 import { BookModal } from "../../admin/components/buku/BookModal";
 import { BookTable } from "../../admin/components/buku/BookTable";
 import { BookGridCard } from "../../admin/components/buku/BookGridCard";
+import { CategoryManagerModal } from "../../admin/components/buku/CategoryManagerModal";
 import { BookService, CategoryService } from "../../services/api";
 import { useNotification } from "../../context/NotificationContext";
-
-const initialBooks = [
-  {
-    id: 1,
-    title: "Algoritma dan Pemrograman",
-    isbn: "978-602-1234-01-1",
-    author: "Ahmad Fauzan",
-    category: "Informatika",
-    ddc: "005.1",
-    shelf: "A-01",
-    stock: 5,
-    available: 5,
-    status: "Tersedia",
-  },
-  {
-    id: 2,
-    title: "Matematika Dasar",
-    isbn: "978-602-1234-02-8",
-    author: "Budi Santoso",
-    category: "Matematika",
-    ddc: "510",
-    shelf: "B-02",
-    stock: 4,
-    available: 2,
-    status: "Dipinjam",
-  },
-  {
-    id: 3,
-    title: "Bahasa Indonesia",
-    isbn: "978-602-1234-03-5",
-    author: "Siti Rahma",
-    category: "Bahasa",
-    ddc: "410",
-    shelf: "C-01",
-    stock: 6,
-    available: 6,
-    status: "Tersedia",
-  },
-  {
-    id: 4,
-    title: "Dasar-Dasar Fisika",
-    isbn: "978-602-1234-04-2",
-    author: "Nur Aisyah",
-    category: "Fisika",
-    ddc: "530",
-    shelf: "D-03",
-    stock: 3,
-    available: 0,
-    status: "Dipinjam",
-  },
-  {
-    id: 5,
-    title: "Ilmu Pengetahuan Alam",
-    isbn: "978-602-1234-05-9",
-    author: "Rizky Maulana",
-    category: "Sains",
-    ddc: "500",
-    shelf: "E-01",
-    stock: 4,
-    available: 0,
-    status: "Rusak",
-  },
-];
 
 function Buku() {
   const [books, setBooks] = useState([]);
@@ -79,23 +17,44 @@ function Buku() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("Semua");
   const [status, setStatus] = useState("Semua");
+  const [typeFilter, setTypeFilter] = useState("Semua");
   const [viewMode, setViewMode] = useState("table");
 
   const { showSuccess, showError, showConfirm } = useNotification();
 
   const [showModal, setShowModal] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [selectedBook, setSelectedBook] = useState(null);
 
   const [form, setForm] = useState({
     title: "",
     isbn: "",
     author: "",
+    publisher: "",
+    publicationYear: "",
+    pageCount: "",
     category: "",
     categoryId: "",
     ddc: "",
     shelf: "",
-    stock: "",
+    stock: "1",
+    status: "Tersedia",
+    isEbook: false,
+    coverUrl: "",
+    fileUrl: "",
+    description: "",
   });
+
+  const loadCategories = async () => {
+    try {
+      const res = await CategoryService.getAll({ limit: 100 });
+      if (res.data?.data) {
+        setCategories(res.data.data);
+      }
+    } catch (err) {
+      console.error("Gagal memuat kategori:", err);
+    }
+  };
 
   const loadBooks = async () => {
     try {
@@ -106,13 +65,20 @@ function Buku() {
           title: b.title || "-",
           isbn: b.isbn || "-",
           author: b.authors?.map((a) => a.name).join(", ") || "-",
+          publisher: b.publisher || "-",
+          publicationYear: b.publicationYear || null,
+          pageCount: b.pageCount || null,
           category: b.category?.name || "Lainnya",
           categoryId: b.category?.id || "",
           ddc: b.category?.ddcCode || "-",
-          shelf: "-",
-          stock: b.copyCount || 0,
-          available: b.copyCount || 0,
-          status: b.copyCount > 0 ? "Tersedia" : "Tidak Tersedia",
+          shelf: b.shelf || "-",
+          stock: b.isEbook ? 99 : (b.copyCount || 0),
+          available: b.isEbook ? 99 : (b.copyCount || 0),
+          status: b.isEbook || b.copyCount > 0 ? "Tersedia" : "Tidak Tersedia",
+          isEbook: Boolean(b.isEbook),
+          coverUrl: b.coverUrl || "",
+          fileUrl: b.fileUrl || "",
+          description: b.description || "",
         }));
         setBooks(apiBooks);
       }
@@ -122,33 +88,16 @@ function Buku() {
   };
 
   useEffect(() => {
-    let mounted = true;
-
-    const loadCategories = async () => {
-      try {
-        const res = await CategoryService.getAll({ limit: 100 });
-        if (mounted && res.data?.data) {
-          setCategories(res.data.data);
-        }
-      } catch (err) {
-        console.error("Gagal memuat kategori:", err);
-      }
-    };
-
     loadCategories();
     loadBooks();
-
-    return () => {
-      mounted = false;
-    };
   }, []);
 
   const filteredBooks = useMemo(() => {
     return books.filter((book) => {
       const searchMatch =
-        book.title.toLowerCase().includes(search.toLowerCase()) ||
-        book.isbn.toLowerCase().includes(search.toLowerCase()) ||
-        book.author.toLowerCase().includes(search.toLowerCase());
+        (book.title || "").toLowerCase().includes(search.toLowerCase()) ||
+        (book.isbn || "").toLowerCase().includes(search.toLowerCase()) ||
+        (book.author || "").toLowerCase().includes(search.toLowerCase());
 
       const categoryMatch =
         categoryFilter === "Semua" || book.category === categoryFilter;
@@ -156,9 +105,14 @@ function Buku() {
       const statusMatch =
         status === "Semua" || book.status === status;
 
-      return searchMatch && categoryMatch && statusMatch;
+      const typeMatch =
+        typeFilter === "Semua" ||
+        (typeFilter === "Fisik" && !book.isEbook) ||
+        (typeFilter === "E-Book" && Boolean(book.isEbook));
+
+      return searchMatch && categoryMatch && statusMatch && typeMatch;
     });
-  }, [books, search, categoryFilter, status]);
+  }, [books, search, categoryFilter, status, typeFilter]);
 
   const openAddModal = () => {
     setSelectedBook(null);
@@ -166,11 +120,19 @@ function Buku() {
       title: "",
       isbn: "",
       author: "",
+      publisher: "",
+      publicationYear: "",
+      pageCount: "",
       category: "",
       categoryId: "",
       ddc: "",
       shelf: "",
-      stock: "",
+      stock: "1",
+      status: "Tersedia",
+      isEbook: false,
+      coverUrl: "",
+      fileUrl: "",
+      description: "",
     });
     setShowModal(true);
   };
@@ -178,14 +140,22 @@ function Buku() {
   const openEditModal = (book) => {
     setSelectedBook(book);
     setForm({
-      title: book.title,
-      isbn: book.isbn,
-      author: book.author,
-      category: book.category,
+      title: book.title || "",
+      isbn: book.isbn || "",
+      author: book.author || "",
+      publisher: book.publisher === "-" ? "" : book.publisher || "",
+      publicationYear: book.publicationYear || "",
+      pageCount: book.pageCount || "",
+      category: book.category || "",
       categoryId: book.categoryId || "",
-      ddc: book.ddc,
-      shelf: book.shelf,
-      stock: book.stock,
+      ddc: book.ddc === "-" ? "" : book.ddc || "",
+      shelf: book.shelf === "-" ? "" : book.shelf || "",
+      stock: book.isEbook ? "" : String(book.stock || "1"),
+      status: book.status || "Tersedia",
+      isEbook: Boolean(book.isEbook),
+      coverUrl: book.coverUrl || "",
+      fileUrl: book.fileUrl || "",
+      description: book.description || "",
     });
     setShowModal(true);
   };
@@ -206,39 +176,50 @@ function Buku() {
       return;
     }
 
+    if (!form.isEbook && form.status === "Tersedia" && Number(form.stock) <= 0) {
+      showError("Stok Tidak Valid", "Buku fisik dengan status 'Tersedia' harus memiliki stok minimal 1.");
+      return;
+    }
+
     try {
-      const isEditing = Boolean(selectedBook && typeof selectedBook.id === "string");
-      if (isEditing) {
-        const updateData = {
-          title: form.title,
-          isbn: form.isbn,
-          authorName: form.author,
-          categoryName: form.category,
-          stock: Number(form.stock) || 0,
-        };
+      const calculatedStock = form.isEbook
+        ? 0
+        : form.status === "Tidak Tersedia"
+        ? 0
+        : Math.max(1, Number(form.stock) || 1);
 
-        if (form.categoryId) {
-          updateData.categoryId = form.categoryId;
-        }
+      const payload = {
+        title: form.title.trim(),
+        isbn: form.isbn.trim(),
+        authorName: form.author.trim(),
+        publisher: form.publisher?.trim() || null,
+        publicationYear: form.publicationYear ? Number(form.publicationYear) : null,
+        pageCount: form.pageCount ? Number(form.pageCount) : null,
+        description: form.description?.trim() || null,
+        coverUrl: form.coverUrl?.trim() || null,
+        isEbook: Boolean(form.isEbook),
+        fileUrl: form.isEbook ? form.fileUrl?.trim() || null : null,
+        shelf: form.isEbook ? null : form.shelf?.trim() || null,
+        stock: calculatedStock,
+      };
 
-        await BookService.update(selectedBook.id, updateData);
-      } else {
-        await BookService.create({
-          title: form.title,
-          isbn: form.isbn,
-          authorName: form.author,
-          categoryName: form.category,
-          stock: Number(form.stock) || 0,
-        });
+      if (form.categoryId) {
+        payload.categoryId = form.categoryId;
+      } else if (form.category?.trim()) {
+        payload.categoryName = form.category.trim();
       }
-      
+
+      if (selectedBook?.id) {
+        await BookService.update(selectedBook.id, payload);
+      } else {
+        await BookService.create(payload);
+      }
+
       await loadBooks();
       setShowModal(false);
       showSuccess(
-        isEditing ? "Buku Berhasil Diperbarui" : "Buku Berhasil Ditambahkan",
-        isEditing
-          ? `Data buku "${form.title}" berhasil diperbarui di database.`
-          : `Buku baru "${form.title}" berhasil disimpan ke sistem perpustakaan.`
+        selectedBook ? "Buku Berhasil Diperbarui" : "Buku Berhasil Ditambahkan",
+        `Data koleksi "${form.title}" berhasil disimpan ke sistem.`
       );
     } catch (err) {
       showError("Gagal Menyimpan Buku", err?.response?.data?.error || "Terjadi kesalahan saat menyimpan buku.");
@@ -251,18 +232,20 @@ function Buku() {
 
     showConfirm({
       title: "Hapus Buku?",
-      message: `Apakah Anda yakin ingin menghapus buku "${bookTitle}" dari katalog perpustakaan?`,
+      message: `Apakah Anda yakin ingin menghapus buku "${bookTitle}"? Buku tanpa riwayat sirkulasi akan dihapus permanen, sedangkan buku yang pernah dipinjam akan diarsipkan secara otomatis demi menjaga catatan riwayat.`,
       confirmText: "Ya, Hapus",
       cancelText: "Batal",
       confirmVariant: "danger",
       onConfirm: async () => {
         try {
-          if (typeof id === "string") {
-            await BookService.delete(id);
+          const res = await BookService.delete(id);
+          if (res?.data?.data?.action === "ARCHIVED") {
+            showSuccess("Buku Diarsipkan", `Buku "${bookTitle}" dan eksemplarnya telah diarsipkan karena memiliki riwayat sirkulasi.`);
+          } else {
+            showSuccess("Berhasil Dihapus", `Buku "${bookTitle}" berhasil dihapus permanen dari sistem.`);
           }
           setBooks((prev) => prev.filter((book) => book.id !== id));
           await loadBooks();
-          showSuccess("Berhasil Dihapus", `Buku "${bookTitle}" berhasil dihapus.`);
         } catch (err) {
           showError("Gagal Menghapus", err?.response?.data?.error || "Gagal menghapus buku.");
         }
@@ -275,38 +258,44 @@ function Buku() {
       {/* Header */}
       <PageHeader
         title="Koleksi Buku"
-        subtitle="Kelola koleksi dan ketersediaan stok buku."
+        subtitle="Kelola koleksi buku fisik dan e-book perpustakaan secara terintegrasi."
       >
-        <button
-          onClick={openAddModal}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 sm:px-5 sm:py-3 text-xs sm:text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-95 w-full sm:w-auto"
-        >
-          <Plus size={16} />
-          Tambah Buku
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowCategoryModal(true)}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-95 cursor-pointer"
+          >
+            <Tag size={15} />
+            Kelola Kategori
+          </button>
+          <button
+            onClick={openAddModal}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 sm:px-5 sm:py-2.5 text-xs sm:text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-95"
+          >
+            <Plus size={16} />
+            Tambah Buku
+          </button>
+        </div>
       </PageHeader>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <Statcard title="Total Judul" value={books.length} color="blue" />
         <Statcard
-          title="Total Stok"
-          value={books.reduce((total, book) => total + Number(book.stock), 0)}
+          title="Total Stok Fisik"
+          value={books.filter((b) => !b.isEbook).reduce((total, book) => total + Number(book.stock), 0)}
           color="blue"
         />
         <Statcard
-          title="Tersedia"
-          value={books.reduce((total, book) => total + Number(book.available), 0)}
+          title="Tersedia Fisik"
+          value={books.filter((b) => !b.isEbook).reduce((total, book) => total + Number(book.available), 0)}
           color="emerald"
         />
         <Statcard
-          title="Dipinjam"
-          value={books.reduce(
-            (total, book) =>
-              total + (Number(book.stock) - Number(book.available)),
-            0
-          )}
-          color="blue"
+          title="Koleksi E-Book"
+          value={books.filter((b) => b.isEbook).length}
+          color="indigo"
         />
       </div>
 
@@ -326,17 +315,11 @@ function Buku() {
               className="flex-1 sm:w-44 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs sm:text-sm text-slate-700 outline-none focus:border-blue-500"
             >
               <option value="Semua">Semua Kategori</option>
-              {categories.length > 0 ? (
-                categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)
-              ) : (
-                <>
-                  <option value="Informatika">Informatika</option>
-                  <option value="Matematika">Matematika</option>
-                  <option value="Bahasa">Bahasa</option>
-                  <option value="Fisika">Fisika</option>
-                  <option value="Sains">Sains</option>
-                </>
-              )}
+              {categories.map((c) => (
+                <option key={c.id} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
             </select>
 
             <select
@@ -346,9 +329,17 @@ function Buku() {
             >
               <option value="Semua">Semua Status</option>
               <option value="Tersedia">Tersedia</option>
-              <option value="Dipinjam">Dipinjam</option>
-              <option value="Rusak">Rusak</option>
-              <option value="Hilang">Hilang</option>
+              <option value="Tidak Tersedia">Tidak Tersedia</option>
+            </select>
+
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="flex-1 sm:w-36 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs sm:text-sm text-slate-700 outline-none focus:border-blue-500"
+            >
+              <option value="Semua">Semua Tipe</option>
+              <option value="Fisik">📖 Fisik</option>
+              <option value="E-Book">📱 E-Book</option>
             </select>
 
             <ViewToggle value={viewMode} onChange={setViewMode} />
@@ -382,8 +373,18 @@ function Buku() {
         onClose={() => setShowModal(false)}
         selectedBook={selectedBook}
         form={form}
+        categories={categories}
         onChange={handleChange}
         onSubmit={handleSubmit}
+        onOpenCategoryManager={() => setShowCategoryModal(true)}
+      />
+
+      {/* Category Manager Modal */}
+      <CategoryManagerModal
+        open={showCategoryModal}
+        onClose={() => setShowCategoryModal(false)}
+        categories={categories}
+        onCategoriesChange={loadCategories}
       />
     </div>
   );

@@ -13,41 +13,6 @@ import { RecentActivity } from "../../admin/components/dashboard/RecentActivity"
 import { QuickActions } from "../../admin/components/dashboard/QuickActions";
 import { DashboardService } from "../../services/api";
 
-const initialStatistics = [
-  {
-    title: "Total Buku",
-    value: "1.245",
-    description: "+12 buku bulan ini",
-    icon: BookOpen,
-    color: "blue",
-    path: "/admin/buku",
-  },
-  {
-    title: "Total Anggota",
-    value: "328",
-    description: "+24 anggota baru",
-    icon: Users,
-    color: "indigo",
-    path: "/admin/anggota",
-  },
-  {
-    title: "Buku Dipinjam",
-    value: "87",
-    description: "Aktif hari ini",
-    icon: ArrowLeftRight,
-    color: "emerald",
-    path: "/admin/sirkulasi",
-  },
-  {
-    title: "Terlambat",
-    value: "12",
-    description: "Perlu ditindaklanjuti",
-    icon: AlertCircle,
-    color: "red",
-    path: "/admin/denda",
-  },
-];
-
 const barData = [
   { day: "Sen", value: 45 },
   { day: "Sel", value: 65 },
@@ -58,110 +23,89 @@ const barData = [
   { day: "Min", value: 72 },
 ];
 
-const initialActivities = [
-  {
-    name: "Ahmad Fauzan",
-    action: "meminjam",
-    detail: "Algoritma Pemrograman",
-    time: "5m lalu",
-    type: "borrow",
-  },
-  {
-    name: "Siti Rahma",
-    action: "mengembalikan",
-    detail: "Matematika Dasar",
-    time: "18m lalu",
-    type: "return",
-  },
-  {
-    name: "Budi Santoso",
-    action: "membayar denda",
-    detail: "Rp5.000",
-    time: "32m lalu",
-    type: "fine",
-  },
-  {
-    name: "Nur Aisyah",
-    action: "meminjam",
-    detail: "Bahasa Indonesia",
-    time: "1j lalu",
-    type: "borrow",
-  },
-  {
-    name: "Rizky Maulana",
-    action: "mengembalikan",
-    detail: "Dasar-Dasar Fisika",
-    time: "2j lalu",
-    type: "return",
-  },
-];
+function formatStats(d) {
+  return [
+    {
+      title: "Total Buku",
+      value: d ? String(d.books?.active ?? d.books?.total ?? "0") : "-",
+      description: "Katalog aktif",
+      icon: BookOpen,
+      color: "blue",
+      path: "/admin/buku",
+    },
+    {
+      title: "Total Anggota",
+      value: d ? String(d.members?.active ?? "0") : "-",
+      description: "Anggota aktif",
+      icon: Users,
+      color: "indigo",
+      path: "/admin/anggota",
+    },
+    {
+      title: "Buku Dipinjam",
+      value: d ? String(d.loans?.active ?? "0") : "-",
+      description: "Aktif saat ini",
+      icon: ArrowLeftRight,
+      color: "emerald",
+      path: "/admin/sirkulasi",
+    },
+    {
+      title: "Terlambat",
+      value: d ? String(d.loans?.overdue ?? "0") : "-",
+      description: "Perlu ditindaklanjuti",
+      icon: AlertCircle,
+      color: "red",
+      path: "/admin/denda",
+    },
+  ];
+}
+
+function formatActivities(d) {
+  if (!d?.recentLoans || d.recentLoans.length === 0) return [];
+  return d.recentLoans.slice(0, 5).map((l) => ({
+    name: l.student?.name || "Anggota",
+    action: l.returnedAt ? "mengembalikan" : "meminjam",
+    detail: l.items?.[0]?.copy?.book?.title || "Buku Perpustakaan",
+    time: l.returnedAt || l.loanDate ? new Date(l.returnedAt || l.loanDate).toLocaleDateString("id-ID") : "Baru saja",
+    type: l.returnedAt ? "return" : "borrow",
+  }));
+}
 
 function Dashboard() {
   const navigate = useNavigate();
-  const [stats, setStats] = useState(initialStatistics);
-  const [activities, setActivities] = useState(initialActivities);
+
+  // Ambil data cache terlebih dahulu jika ada (Instant Render 0 ms)
+  const cachedResponse = DashboardService.getCached();
+  const cachedData = cachedResponse?.data?.data;
+
+  const [stats, setStats] = useState(() => formatStats(cachedData));
+  const [activities, setActivities] = useState(() => formatActivities(cachedData));
+  const [loading, setLoading] = useState(() => !cachedData);
 
   useEffect(() => {
     let mounted = true;
+
     const fetchDashboardData = async () => {
       try {
-        const res = await DashboardService.get();
+        // Ambil data (menggunakan cache atau revalidasi background)
+        const res = await DashboardService.get(!cachedData);
         if (mounted && res.data?.data) {
           const d = res.data.data;
-          setStats([
-            {
-              title: "Total Buku",
-              value: String(d.books?.active ?? d.books?.total ?? "0"),
-              description: "Katalog aktif",
-              icon: BookOpen,
-              color: "blue",
-              path: "/admin/buku",
-            },
-            {
-              title: "Total Anggota",
-              value: String(d.members?.active ?? "0"),
-              description: "Anggota aktif",
-              icon: Users,
-              color: "indigo",
-              path: "/admin/anggota",
-            },
-            {
-              title: "Buku Dipinjam",
-              value: String(d.loans?.active ?? "0"),
-              description: "Aktif saat ini",
-              icon: ArrowLeftRight,
-              color: "emerald",
-              path: "/admin/sirkulasi",
-            },
-            {
-              title: "Terlambat",
-              value: String(d.loans?.overdue ?? "0"),
-              description: "Perlu ditindaklanjuti",
-              icon: AlertCircle,
-              color: "red",
-              path: "/admin/denda",
-            },
-          ]);
-
-          if (d.recentLoans && d.recentLoans.length > 0) {
-            const apiActivities = d.recentLoans.slice(0, 5).map((l) => ({
-              name: l.student?.name || "Anggota",
-              action: l.returnedAt ? "mengembalikan" : "meminjam",
-              detail: l.items?.[0]?.copy?.book?.title || "Buku Perpustakaan",
-              time: l.returnedAt || l.loanDate ? new Date(l.returnedAt || l.loanDate).toLocaleDateString("id-ID") : "Baru saja",
-              type: l.returnedAt ? "return" : "borrow",
-            }));
-            setActivities(apiActivities);
-          }
+          setStats(formatStats(d));
+          setActivities(formatActivities(d));
+          setLoading(false);
         }
       } catch (err) {
         console.error("Gagal memuat dashboard API:", err);
+        if (mounted) setLoading(false);
       }
     };
 
     fetchDashboardData();
-    return () => { mounted = false; };
-  }, []);
+    return () => {
+      mounted = false;
+    };
+  }, [cachedData]);
 
   return (
     <div className="space-y-5 sm:space-y-6 lg:space-y-8">
@@ -186,6 +130,7 @@ function Dashboard() {
             description={item.description}
             icon={item.icon}
             color={item.color}
+            loading={loading && item.value === "-"}
             onClick={() => navigate(item.path)}
           />
         ))}
@@ -194,7 +139,7 @@ function Dashboard() {
       {/* Charts & Activity */}
       <div className="grid gap-5 sm:gap-6 xl:grid-cols-3">
         <WeeklyChart data={barData} />
-        <RecentActivity activities={activities} />
+        <RecentActivity activities={activities} loading={loading && activities.length === 0} />
       </div>
 
       {/* Quick Actions */}

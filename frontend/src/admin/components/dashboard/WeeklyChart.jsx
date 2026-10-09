@@ -1,7 +1,7 @@
 import { TrendingUp } from "lucide-react";
 
-export function WeeklyChart({ data }) {
-  const maxBar = Math.max(...data.map((d) => d.value));
+export function WeeklyChart({ data = [] }) {
+  const maxBar = Math.max(...data.map((d) => d.value), 1);
 
   return (
     <div className="xl:col-span-2 rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-6 shadow-sm">
