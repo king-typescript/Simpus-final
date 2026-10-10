@@ -25,45 +25,41 @@ const staggerItem = {
   }),
 };
 
-export default function DashboardSiswa() {
-  const [stats, setStats] = useState([
+// 1. DITAMBAHKAN: Fungsi helper untuk memformat data statistik
+function formatSiswaStats(d, ebookCount = 0) {
+  if (!d) return [
     { id: 'dipinjam', label: 'Sedang Dipinjam', nilai: '0', satuan: 'Buku', tipe: 'warning' },
     { id: 'selesai', label: 'Riwayat Pinjam', nilai: '0', satuan: 'Buku', tipe: 'success' },
     { id: 'denda', label: 'Tunggakan Denda', nilai: 'Rp 0', satuan: '', tipe: 'danger' }
-  ]);
-  const [activeLoans, setActiveLoans] = useState([]);
+  ];
 
-  useEffect(() => {
-    let mounted = true;
-    const loadDashboard = async () => {
-      try {
-        const res = await DashboardService.get();
-        if (mounted && res.data?.data) {
-          const d = res.data.data;
-          setStats([
-            {
-              id: 'dipinjam',
-              label: 'Sedang Dipinjam',
-              nilai: String(d.loans?.active ?? 0),
-              satuan: 'Buku',
-              tipe: 'warning',
-            },
-            {
-              id: 'selesai',
-              label: 'Riwayat Pinjam',
-              nilai: String(d.recentLoans?.length ?? 0),
-              satuan: 'Buku',
-              tipe: 'success',
-            },
-            {
-              id: 'denda',
-              label: 'Tunggakan Denda',
-              nilai: `Rp ${Number(d.fines?.unpaidAmount ?? 0).toLocaleString('id-ID')}`,
-              satuan: '',
-              tipe: 'danger',
-            },
-          ]);
+  return [
+    {
+      id: 'dipinjam',
+      label: 'Sedang Dipinjam',
+      // Menggabungkan total buku fisik dan e-book yang dipinjam
+      nilai: String((d.loans?.active ?? 0) + ebookCount),
+      satuan: 'Buku',
+      tipe: 'warning',
+    },
+    {
+      id: 'selesai',
+      label: 'Riwayat Pinjam',
+      nilai: String(d.recentLoans?.length ?? 0),
+      satuan: 'Buku',
+      tipe: 'success',
+    },
+    {
+      id: 'denda',
+      label: 'Tunggakan Denda',
+      nilai: `Rp ${Number(d.fines?.unpaidAmount ?? 0).toLocaleString('id-ID')}`,
+      satuan: '',
+      tipe: 'danger',
+    },
+  ];
+}
 
+// Helper untuk memformat data buku fisik aktif
 function formatActiveLoans(d) {
   if (!d?.activeLoans) return [];
   return d.activeLoans.flatMap((loan) =>
@@ -78,39 +74,48 @@ function formatActiveLoans(d) {
   );
 }
 
+// 2. DIPERBAIKI: Hanya ada satu deklarasi fungsi komponen utama
 export default function DashboardSiswa() {
   const { user } = useAuth();
-  const cachedResponse = DashboardService.getCached();
+  
+  // Pastikan getCached ada di DashboardService Anda, jika tidak, ganti nilainya jadi null
+  const cachedResponse = typeof DashboardService.getCached === 'function' ? DashboardService.getCached() : null;
   const cachedData = cachedResponse?.data?.data;
 
   const initialELoans = getActiveEbookLoans(user?.id || 'siswa-demo');
+  
   const [ebookLoans, setEbookLoans] = useState(initialELoans);
   const [stats, setStats] = useState(() => formatSiswaStats(cachedData, initialELoans.length));
   const [activeLoans, setActiveLoans] = useState(() => formatActiveLoans(cachedData));
   const [readingEbook, setReadingEbook] = useState(null);
+  
+  // 3. DITAMBAHKAN: State recentRead yang sebelumnya hilang
+  const [recentRead, setRecentRead] = useState(null);
 
   useEffect(() => {
     let mounted = true;
     const loadDashboard = async () => {
       try {
-        const res = await DashboardService.get(!cachedData);
+        // Pemanggilan API standar
+        const res = await DashboardService.get(); 
         if (mounted && res.data?.data) {
           const d = res.data.data;
           const eLoans = getActiveEbookLoans(user?.id || 'siswa-demo');
+          
           if (mounted) {
             setEbookLoans(eLoans);
             setStats(formatSiswaStats(d, eLoans.length));
             setActiveLoans(formatActiveLoans(d));
-          }
-          
-          // Memasukkan buku terakhir yang dikembalikan (jika ada)
-          if (d.recentLoans && d.recentLoans.length > 0) {
-            const lastLoan = d.recentLoans[0];
-            setRecentRead({
-              id: lastLoan.id,
-              judul: lastLoan.bookTitle || 'Buku Perpustakaan',
-              dikembalikan: lastLoan.returnedAt ? new Date(lastLoan.returnedAt).toLocaleDateString('id-ID') : '-'
-            });
+            
+            // Memasukkan buku terakhir yang dikembalikan (jika ada)
+            if (d.recentLoans && d.recentLoans.length > 0) {
+              const lastLoan = d.recentLoans[0];
+              setRecentRead({
+                id: lastLoan.id,
+                judul: lastLoan.bookTitle || 'Buku Perpustakaan',
+                dikembalikan: lastLoan.returnedAt ? new Date(lastLoan.returnedAt).toLocaleDateString('id-ID') : '-'
+              });
+            }
           }
         }
       } catch (err) {
@@ -118,10 +123,11 @@ export default function DashboardSiswa() {
       }
     };
     loadDashboard();
+    
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [user?.id]); // Pastikan efek diperbarui jika ID user berubah
 
   return (
     <div className="space-y-4 sm:space-y-6">
