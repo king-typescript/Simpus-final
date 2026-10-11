@@ -1,29 +1,19 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { Prisma } from "@/app/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { noStoreHeaders, requireLibrarian } from "@/lib/auth";
+import { getClientIp, hasOnlyFields, isRecord, isUuid } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-const paymentSchema = z.object({
-  receiptNumber: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/, "Nomor kuitansi tidak valid").optional(),
-  amount: z.string().trim().regex(/^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/, "Nominal tidak valid").optional(),
-  note: z.string().trim().max(1000, "Catatan maksimal 1000 karakter").nullable().optional(),
-});
-
 function errorResponse(error: string, status: number) {
   return NextResponse.json({ error }, { status, headers: noStoreHeaders });
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function uuid(value: unknown): value is string {
-  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+function validMoney(value: string) {
+  return /^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/.test(value);
 }
 
 function jsonValue(value: unknown) {
@@ -38,24 +28,7 @@ function isOriginAllowed(request: Request) {
   const origin = request.headers.get("origin");
   if (!origin) return true;
   try {
-    const reqOrigin = new URL(request.url).origin;
-    
-    // Izinkan semua origin IP lokal untuk testing mobile (format: http://192.168.x.x:5173)
-    if (process.env.NODE_ENV !== "production" || process.env.COOKIE_SECURE === "false") {
-      if (origin.startsWith("http://192.168.") || origin.startsWith("http://10.") || origin.startsWith("http://172.")) {
-        return true;
-      }
-    }
-
-    const allowed = [
-      reqOrigin,
-      process.env.FRONTEND_URL,
-      "http://localhost:5173",
-      "http://127.0.0.1:5173",
-      "http://localhost:3000",
-      "http://127.0.0.1:3000",
-    ].filter(Boolean);
-    return allowed.includes(origin);
+    return origin === new URL(request.url).origin;
   } catch {
     return false;
   }
@@ -137,10 +110,10 @@ export async function GET(_request: Request, context: RouteContext) {
   if (!auth.ok) return errorResponse("Tidak memiliki akses.", auth.status);
 
   const { id } = await context.params;
-  if (!uuid(id)) return errorResponse("ID denda tidak valid.", 422);
+  if (!isUuid(id)) return errorResponse("ID denda tidak valid.", 422);
 
   try {
-    const fine = await prisma.fine.findUnique({ where: { id }, select: fineSelect });
+    const fine = await prisma.fine.findUnique({ where: { id, schoolId: auth.schoolId }, select: fineSelect });
     return fine ? NextResponse.json({ data: serializeFine(fine) }, { headers: noStoreHeaders }) : errorResponse("Denda tidak ditemukan.", 404);
   } catch {
     return errorResponse("Terjadi kesalahan pada server.", 500);
@@ -153,7 +126,7 @@ export async function POST(request: Request, context: RouteContext) {
   if (!isOriginAllowed(request)) return errorResponse("Origin tidak diizinkan.", 403);
 
   const { id } = await context.params;
-  if (!uuid(id)) return errorResponse("ID denda tidak valid.", 422);
+  if (!isUuid(id)) return errorResponse("ID denda tidak valid.", 422);
 
   let body: unknown;
   try {
@@ -162,35 +135,40 @@ export async function POST(request: Request, context: RouteContext) {
     return errorResponse("Body JSON tidak valid.", 400);
   }
 
-  const parseResult = paymentSchema.safeParse(body);
-  if (!parseResult.success) {
-    return errorResponse(parseResult.error.issues[0]?.message || "Data pembayaran tidak valid.", 422);
+  if (!isRecord(body) || !hasOnlyFields(body, ["receiptNumber", "amount", "note"])) {
+    return errorResponse("Body request tidak valid.", 422);
   }
 
-  const { receiptNumber: rawReceiptNumber, amount: rawAmount, note = null } = parseResult.data;
+  const receiptNumber = typeof body.receiptNumber === "string" ? body.receiptNumber.trim() : "";
+  const amount = typeof body.amount === "string" ? body.amount.trim() : "";
+  const note = body.note === undefined || body.note === null ? null : typeof body.note === "string" ? body.note.trim() || null : undefined;
+
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/.test(receiptNumber) || !validMoney(amount) || note === undefined || (note !== null && note.length > 1000)) {
+    return errorResponse("Data pembayaran tidak valid.", 422);
+  }
+
+  const ipAddress = getClientIp(request);
 
   try {
     const result = await serializable(() => prisma.$transaction(async (tx) => {
-      const fine = await tx.fine.findUnique({ where: { id }, select: fineSelect });
+      const fine = await tx.fine.findUnique({ where: { id, schoolId: auth.schoolId }, select: fineSelect });
       if (!fine) throw new Error("FINE_NOT_FOUND");
       if (fine.status !== "BELUM_DIBAYAR") throw new Error("FINE_ALREADY_SETTLED");
       if (fine.payment) throw new Error("PAYMENT_EXISTS");
       if (!fine.loanItem.returnedAt) throw new Error("BOOK_NOT_RETURNED");
 
-      const paymentAmount = rawAmount ? new Prisma.Decimal(rawAmount) : fine.amount;
+      const paymentAmount = new Prisma.Decimal(amount);
       if (!paymentAmount.equals(fine.amount)) throw new Error("AMOUNT_MISMATCH");
 
-      const receiptNumber = rawReceiptNumber || `KW-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
-
       const payment = await tx.finePayment.create({
-        data: { fineId: id, receivedById: auth.user.id, amount: paymentAmount, paymentMethod: "CASH", receiptNumber, note: note || null },
+        data: { schoolId: auth.schoolId, fineId: id, receivedById: auth.user.id, amount: paymentAmount, paymentMethod: "CASH", receiptNumber, note },
         select: { id: true, fineId: true, amount: true, paymentMethod: true, receiptNumber: true, paidAt: true, note: true, receivedBy: { select: { id: true, name: true, username: true } } },
       });
-      await tx.fine.update({ where: { id }, data: { status: "LUNAS" } });
-      const updatedFine = await tx.fine.findUniqueOrThrow({ where: { id }, select: fineSelect });
+      await tx.fine.update({ where: { id, schoolId: auth.schoolId }, data: { status: "LUNAS" } });
+      const updatedFine = await tx.fine.findUniqueOrThrow({ where: { id, schoolId: auth.schoolId }, select: fineSelect });
 
       await tx.auditLog.create({
-        data: { userId: auth.user.id, action: "PAYMENT", entityType: "Fine", entityId: id, oldData: jsonValue(fine), newData: jsonValue(updatedFine) },
+        data: { schoolId: auth.schoolId, userId: auth.user.id, action: "PAYMENT", entityType: "Fine", entityId: id, oldData: jsonValue(fine), newData: jsonValue(updatedFine), ipAddress },
       });
 
       return { fine: updatedFine, payment };

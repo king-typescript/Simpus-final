@@ -31,7 +31,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
   try {
     const cls = await prisma.schoolClass.findFirst({
-      where: { id, isActive: true },
+      where: { id, schoolId: auth.schoolId, isActive: true },
       select: { id: true, name: true, isActive: true, createdAt: true, updatedAt: true },
     });
     return cls ? NextResponse.json({ data: cls }, { headers: noStoreHeaders }) : errorResponse("Kelas tidak ditemukan.", 404);
@@ -59,12 +59,12 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   try {
     const updated = await prisma.$transaction(async (tx) => {
-      const current = await tx.schoolClass.findFirst({ where: { id, isActive: true } });
+      const current = await tx.schoolClass.findFirst({ where: { id, schoolId: auth.schoolId, isActive: true } });
       if (!current) return null;
 
       if (data.name && data.name !== current.name) {
         await tx.student.updateMany({
-          where: { className: current.name },
+          where: { schoolId: auth.schoolId, className: current.name },
           data: { className: data.name },
         });
       }
@@ -75,7 +75,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         select: { id: true, name: true, isActive: true, createdAt: true, updatedAt: true },
       });
       await tx.auditLog.create({
-        data: { userId: auth.user.id, action: "UPDATE", entityType: "SchoolClass", entityId: id, oldData: jsonValue(current), newData: jsonValue(cls) },
+        data: { schoolId: auth.schoolId, userId: auth.user.id, action: "UPDATE", entityType: "SchoolClass", entityId: id, oldData: jsonValue(current), newData: jsonValue(cls) },
       });
       return cls;
     });
@@ -97,15 +97,15 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      const cls = await tx.schoolClass.findFirst({ where: { id, isActive: true } });
+      const cls = await tx.schoolClass.findFirst({ where: { id, schoolId: auth.schoolId, isActive: true } });
       if (!cls) return "NOT_FOUND";
 
-      const studentCount = await tx.student.count({ where: { className: cls.name } });
+      const studentCount = await tx.student.count({ where: { schoolId: auth.schoolId, className: cls.name } });
       if (studentCount > 0) throw new Error("CLASS_HAS_STUDENTS");
 
       await tx.schoolClass.update({ where: { id }, data: { isActive: false } });
       await tx.auditLog.create({
-        data: { userId: auth.user.id, action: "DEACTIVATE", entityType: "SchoolClass", entityId: id, oldData: jsonValue(cls) },
+        data: { schoolId: auth.schoolId, userId: auth.user.id, action: "DEACTIVATE", entityType: "SchoolClass", entityId: id, oldData: jsonValue(cls) },
       });
       return "DEACTIVATED";
     }, { isolationLevel: "Serializable" });

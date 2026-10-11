@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import argon2 from "argon2";
-import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import {
   AUTH_COOKIE_NAME,
@@ -8,105 +7,98 @@ import {
   createAuthToken,
   noStoreHeaders,
 } from "@/lib/auth";
-import { getClientIp, rateLimit } from "@/lib/rate-limit";
+import { getClientIp, isJsonContentType, isRecord } from "@/lib/validation";
+import { isRateLimited, recordAccountFailure } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
 const INVALID_CREDENTIALS = "Username atau password salah.";
-const TOO_MANY_REQUESTS = "Terlalu banyak percobaan login. Silakan coba lagi dalam 1 menit.";
 const SERVER_ERROR = "Terjadi kesalahan pada server.";
+const TOO_MANY_ATTEMPTS = "Terlalu banyak percobaan login. Coba lagi nanti.";
 const DUMMY_PASSWORD_HASH =
   "$argon2id$v=19$m=65536,p=4,t=3$WNXtRUBVPKJd0ntXbRHsaA$37u7VFDdU7kTjPe9/olF+O8r1vsnAnEXBBnExV2Dw4k";
-
-const loginSchema = z.object({
-  username: z.string().trim().min(1, "Username wajib diisi").max(100, "Username terlalu panjang"),
-  password: z.string().min(1, "Password wajib diisi").max(256, "Password terlalu panjang"),
-  role: z.enum(["PUSTAKAWAN", "SISWA"]).optional(),
-});
 
 function errorResponse(message: string, status: number) {
   return NextResponse.json({ error: message }, { status, headers: noStoreHeaders });
 }
 
 export async function POST(request: Request) {
-  const ip = getClientIp(request);
-  const rateLimitResult = rateLimit(`login:${ip}`, 5, 60000); // 5 attempts per 60s per IP
-
-  if (!rateLimitResult.success) {
-    return errorResponse(TOO_MANY_REQUESTS, 429);
+  if (!isJsonContentType(request)) {
+    return errorResponse("Content-Type harus application/json.", 415);
   }
-
   let body: unknown;
+
   try {
     body = await request.json();
   } catch {
     return errorResponse("Body JSON tidak valid.", 400);
   }
 
-  const parseResult = loginSchema.safeParse(body);
-  if (!parseResult.success) {
-    return errorResponse(parseResult.error.issues[0]?.message || INVALID_CREDENTIALS, 400);
+  if (!isRecord(body)) {
+    return errorResponse("Body request tidak valid.", 400);
   }
 
-  const { username, password, role } = parseResult.data;
+  const schoolCode = typeof body.schoolCode === "string" ? body.schoolCode.trim() : "";
+  const username = typeof body.username === "string" ? body.username.trim() : "";
+  const password = typeof body.password === "string" ? body.password : "";
+
+  if (!schoolCode || !username || !password || schoolCode.length > 100 || username.length > 100 || password.length > 256) {
+    return errorResponse(INVALID_CREDENTIALS, 401);
+  }
+
+  const ip = getClientIp(request);
+  const rateLimitIdentity = `${schoolCode}:${username.toLowerCase()}`;
+
+  if (await isRateLimited([rateLimitIdentity, ip])) {
+    return errorResponse(TOO_MANY_ATTEMPTS, 429);
+  }
 
   try {
-    let user = await prisma.user.findUnique({
-      where: { username },
-      select: {
-        id: true,
-        username: true,
-        passwordHash: true,
-        name: true,
-        role: true,
-        status: true,
-      },
+    const school = await prisma.school.findUnique({
+      where: { code: schoolCode },
+      select: { id: true, code: true, name: true, isActive: true },
     });
-
-    if (!user) {
-      const student = await prisma.student.findUnique({
-        where: { nis: username },
-        select: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              passwordHash: true,
-              name: true,
-              role: true,
-              status: true,
-            },
+    const user = school
+      ? await prisma.user.findUnique({
+          where: { schoolId_username: { schoolId: school.id, username } },
+          select: {
+            id: true,
+            schoolId: true,
+            username: true,
+            passwordHash: true,
+            name: true,
+            role: true,
+            status: true,
+            mustChangePassword: true,
           },
-        },
-      });
-      if (student?.user) {
-        user = student.user;
-      }
-    }
+        })
+      : null;
 
     const passwordMatches = await argon2.verify(
       user?.passwordHash ?? DUMMY_PASSWORD_HASH,
       password,
     );
 
-    if (!user || user.status !== "AKTIF" || !passwordMatches) {
+    if (!school || !school.isActive || !user || user.status !== "AKTIF" || !passwordMatches) {
+      // ponytail: fire-and-forget audit for failed login; acceptable to lose on crash
+      prisma.auditLog.create({ data: { schoolId: school?.id ?? null, userId: user?.id ?? null, action: "LOGIN_FAILED", entityType: "User", entityId: user?.id ?? null, newData: { schoolCode, username }, ipAddress: ip } }).catch(() => {});
+      await recordAccountFailure(rateLimitIdentity, ip);
       return errorResponse(INVALID_CREDENTIALS, 401);
     }
 
-    if (role && user.role !== role) {
-      if (role === "PUSTAKAWAN") {
-        return errorResponse("Akun ini bukan akun Admin/Pustakawan. Silakan masuk melalui tab Siswa.", 403);
-      }
-      return errorResponse("Akun ini bukan akun Siswa. Silakan masuk melalui tab Admin.", 403);
-    }
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
-    });
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      }),
+      prisma.auditLog.create({
+        data: { schoolId: user.schoolId, userId: user.id, action: "LOGIN_SUCCESS", entityType: "User", entityId: user.id, ipAddress: ip },
+      }),
+    ]);
 
     const token = await createAuthToken({
       userId: user.id,
+      schoolId: user.schoolId,
       role: user.role,
     });
 
@@ -118,7 +110,8 @@ export async function POST(request: Request) {
           name: user.name,
           role: user.role,
         },
-        token, // Added token for fallback authorization Header
+        school,
+        token,
       },
       { headers: noStoreHeaders },
     );
@@ -129,4 +122,3 @@ export async function POST(request: Request) {
     return errorResponse(SERVER_ERROR, 500);
   }
 }
-

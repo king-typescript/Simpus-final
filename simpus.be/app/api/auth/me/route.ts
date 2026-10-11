@@ -17,7 +17,7 @@ export async function GET() {
     let student = null;
     if (auth.user.role === "SISWA") {
       student = await prisma.student.findFirst({
-        where: { userId: auth.user.id, isActive: true },
+        where: { userId: auth.user.id, schoolId: auth.user.schoolId, isActive: true },
         select: {
           id: true,
           nis: true,

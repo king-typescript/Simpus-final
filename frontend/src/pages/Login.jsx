@@ -13,6 +13,7 @@ export default function Login() {
   const [peran, setPeran] = useState('siswa');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [schoolCode, setSchoolCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -34,6 +35,7 @@ export default function Login() {
       const res = await login({
         username: identifier, // Backend menerima field bernama 'username'
         password: password,
+        schoolCode: schoolCode.trim() ? schoolCode.trim().toUpperCase() : undefined,
         role: expectedRole,
       });
 
@@ -173,6 +175,26 @@ export default function Login() {
                   disabled={isLoading}
                   autoComplete="username"
                   className="w-full h-12 px-4 bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-primary-blue focus:ring-4 focus:ring-primary-blue/10 text-slate-800 transition-all shadow-sm disabled:bg-slate-50 disabled:text-slate-400 placeholder:text-slate-400"
+                />
+              </div>
+            </div>
+
+            {/* Input Kode Sekolah (Opsional - Multi Sekolah) */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="block text-sm font-semibold text-slate-700">
+                  Kode Sekolah
+                </label>
+                <span className="text-xs text-slate-400 font-normal">Opsional (Default otomatis)</span>
+              </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={schoolCode}
+                  onChange={(e) => setSchoolCode(e.target.value)}
+                  placeholder="Contoh: DEFAULT atau SMA1"
+                  disabled={isLoading}
+                  className="w-full h-12 px-4 bg-white rounded-xl border border-slate-200 focus:outline-none focus:border-primary-blue focus:ring-4 focus:ring-primary-blue/10 text-slate-800 uppercase transition-all shadow-sm disabled:bg-slate-50 disabled:text-slate-400 placeholder:text-slate-400"
                 />
               </div>
             </div>

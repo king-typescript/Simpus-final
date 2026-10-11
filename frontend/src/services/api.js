@@ -75,14 +75,94 @@ export const ClassService = {
   },
 }
 
+export const AuthorService = {
+  getAll: (params) => api.get('/penulis', { params }),
+  getById: (id) => api.get(`/penulis/${id}`),
+  create: async (data) => {
+    const res = await api.post('/penulis', data)
+    apiCache.invalidate('penulis')
+    return res
+  },
+  update: async (id, data) => {
+    const res = await api.patch(`/penulis/${id}`, data)
+    apiCache.invalidate('penulis')
+    return res
+  },
+  delete: async (id) => {
+    const res = await api.delete(`/penulis/${id}`)
+    apiCache.invalidate('penulis')
+    return res
+  },
+}
+
+export const ShelfService = {
+  getAll: (params) => api.get('/rak', { params }),
+  getById: (id) => api.get(`/rak/${id}`),
+  create: async (data) => {
+    const res = await api.post('/rak', data)
+    apiCache.invalidate('rak')
+    return res
+  },
+  update: async (id, data) => {
+    const res = await api.patch(`/rak/${id}`, data)
+    apiCache.invalidate('rak')
+    return res
+  },
+  delete: async (id) => {
+    const res = await api.delete(`/rak/${id}`)
+    apiCache.invalidate('rak')
+    return res
+  },
+}
+
+export const EbookService = {
+  getAll: (params) => api.get('/ebook', { params }),
+  getById: (id) => api.get(`/ebook/${id}`),
+  create: async (formData) => {
+    const res = await api.post('/ebook', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    apiCache.invalidate('ebook')
+    apiCache.invalidate('buku')
+    return res
+  },
+  update: async (id, data) => {
+    const res = await api.patch(`/ebook/${id}`, data)
+    apiCache.invalidate('ebook')
+    return res
+  },
+  delete: async (id) => {
+    const res = await api.delete(`/ebook/${id}`)
+    apiCache.invalidate('ebook')
+    return res
+  },
+  borrowAccess: (ebookId) => api.post(`/ebook/${ebookId}/akses`),
+  getMyAccesses: () => api.get('/ebook/akses'),
+  returnAccess: (accessId) => api.post(`/ebook/akses/${accessId}/kembali`),
+  extendAccess: (accessId) => api.post(`/ebook/akses/${accessId}/perpanjang`),
+}
+
+export const ReportService = {
+  getPeminjaman: (params) => api.get('/laporan/peminjaman', { params }),
+  exportPeminjaman: (params) => api.get('/export/peminjaman', {
+    params,
+    responseType: 'blob',
+  }),
+}
+
 export const UploadService = {
   uploadFile: async (file) => {
     const formData = new FormData()
     formData.append('file', file)
     return api.post('/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  uploadCover: async (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/upload/cover', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
 }
@@ -90,7 +170,11 @@ export const UploadService = {
 export const AuthService = {
   login: (credentials) => {
     apiCache.clear()
-    return api.post('/auth/login', credentials)
+    const payload = {
+      ...credentials,
+      schoolCode: credentials.schoolCode?.trim() ? credentials.schoolCode.trim().toUpperCase() : 'DEFAULT',
+    }
+    return api.post('/auth/login', payload)
   },
   logout: () => {
     apiCache.clear()

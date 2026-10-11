@@ -1,39 +1,27 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { noStoreHeaders, requireAuthenticatedUser, requireLibrarian } from "@/lib/auth";
+import {
+  getClientIp,
+  hasOnlyFields,
+  isJsonContentType,
+  isRecord,
+  normalizeText,
+  parseEnum,
+  parseOptionalString,
+  parsePagination,
+  parseRequiredString,
+  parseSearch,
+} from "@/lib/validation";
 
 export const runtime = "nodejs";
-
-const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 100;
-const MAX_PAGE = 10_000;
-
-const createCategorySchema = z.object({
-  name: z.string().trim().min(1, "Nama kategori wajib diisi").max(150, "Nama kategori terlalu panjang"),
-  ddcCode: z.string().trim().regex(/^\d{3}(?:\.\d{1,10})?$/, "Kode DDC harus berupa 3 digit angka (opsional desimal)"),
-  description: z.string().trim().max(1000, "Deskripsi terlalu panjang").nullable().optional(),
-});
 
 function errorResponse(error: string, status: number) {
   return NextResponse.json({ error }, { status, headers: noStoreHeaders });
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function isPositiveInteger(value: string | null, fallback: number, maximum: number) {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 && parsed <= maximum ? parsed : fallback;
-}
-
 function jsonValue(value: unknown) {
   return JSON.parse(JSON.stringify(value));
-}
-
-function hasOnlyFields(value: Record<string, unknown>, fields: readonly string[]) {
-  return Object.keys(value).every((key) => fields.includes(key));
 }
 
 const categorySelect = {
@@ -53,18 +41,23 @@ function toCategoryResponse(category: { _count: { books: number }; [key: string]
 }
 
 export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const page = isPositiveInteger(url.searchParams.get("page"), 1, MAX_PAGE);
-  const limit = isPositiveInteger(url.searchParams.get("limit"), DEFAULT_LIMIT, MAX_LIMIT);
-  const search = url.searchParams.get("search")?.trim() ?? "";
-  const status = url.searchParams.get("status")?.trim() ?? "";
+  const auth = await requireAuthenticatedUser();
+  if (!auth.ok) return errorResponse("Autentikasi diperlukan.", auth.status);
 
-  if (status && status !== "AKTIF" && status !== "NONAKTIF") {
-    return errorResponse("Status kategori tidak valid.", 422);
-  }
+  const url = new URL(request.url);
+  const pagination = parsePagination(url.searchParams);
+  if (!pagination.ok) return errorResponse(pagination.error, 422);
+  const searchResult = parseSearch(url.searchParams);
+  if (!searchResult.ok) return errorResponse(searchResult.error, 422);
+  const status = url.searchParams.get("status")?.trim() ?? "";
+  const statusResult = status ? parseEnum(status, ["AKTIF", "NONAKTIF"] as const, "Status kategori") : null;
+  if (statusResult && !statusResult.ok) return errorResponse(statusResult.error, 422);
+  const { page, limit } = pagination.value;
+  const search = searchResult.value;
 
   const where = {
-    isActive: status ? status === "AKTIF" : true,
+    schoolId: auth.schoolId,
+    isActive: statusResult?.ok ? statusResult.value === "AKTIF" : true,
     ...(search ? {
       OR: [
         { name: { contains: search, mode: "insensitive" as const } },
@@ -77,13 +70,13 @@ export async function GET(request: Request) {
   try {
     const [categories, total] = await prisma.$transaction([
       prisma.category.findMany({
-        where,
+        where: { ...where, schoolId: auth.schoolId },
         select: categorySelect,
         orderBy: [{ name: "asc" }, { id: "asc" }],
         skip: (page - 1) * limit,
         take: limit,
       }),
-      prisma.category.count({ where }),
+      prisma.category.count({ where: { ...where, schoolId: auth.schoolId } }),
     ]);
 
     return NextResponse.json({
@@ -98,21 +91,25 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const auth = await requireLibrarian();
   if (!auth.ok) return errorResponse("Tidak memiliki akses.", auth.status);
+  if (!isJsonContentType(request)) return errorResponse("Content-Type harus application/json.", 415);
 
   let body: unknown;
   try { body = await request.json(); } catch { return errorResponse("Body JSON tidak valid.", 400); }
-
-  const parseResult = createCategorySchema.safeParse(body);
-  if (!parseResult.success) {
-    return errorResponse(parseResult.error.issues[0]?.message || "Data kategori tidak valid.", 422);
+  if (!isRecord(body) || !hasOnlyFields(body, ["name", "ddcCode", "description"])) {
+    return errorResponse("Body request tidak valid.", 422);
   }
 
-  const { name, ddcCode, description = null } = parseResult.data;
+  const nameResult = parseRequiredString(body.name, { field: "Nama kategori", maxLength: 150 });
+  const ddcCode = typeof body.ddcCode === "string" ? normalizeText(body.ddcCode) : "";
+  const descriptionResult = parseOptionalString(body.description, { field: "Deskripsi kategori", maxLength: 1000 });
+  if (!nameResult.ok || !/^\d{3}(?:\.\d{1,10})?$/.test(ddcCode) || !descriptionResult.ok) return errorResponse("Data kategori tidak valid.", 422);
+  const name = nameResult.value;
+  const description = descriptionResult.value ?? null;
 
   try {
     const category = await prisma.$transaction(async (tx) => {
-      const created = await tx.category.create({ data: { name, ddcCode, description, isActive: true }, select: categorySelect });
-      await tx.auditLog.create({ data: { userId: auth.user.id, action: "CREATE", entityType: "Category", entityId: created.id, newData: jsonValue(created) } });
+      const created = await tx.category.create({ data: { schoolId: auth.schoolId, name, ddcCode, description, isActive: true }, select: categorySelect });
+      await tx.auditLog.create({ data: { schoolId: auth.schoolId, userId: auth.user.id, action: "CREATE", entityType: "Category", entityId: created.id, newData: jsonValue(created), ipAddress: getClientIp(request) } });
       return created;
     });
     return NextResponse.json({ data: toCategoryResponse(category) }, { status: 201, headers: noStoreHeaders });

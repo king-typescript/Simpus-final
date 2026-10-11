@@ -13,23 +13,9 @@ function errorResponse(error: string, status: number) {
   return NextResponse.json({ error }, { status, headers: noStoreHeaders });
 }
 
-function isPositiveInteger(value: string | null, fallback: number, maximum: number) {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 && parsed <= maximum ? parsed : fallback;
-}
-
 function jsonValue(value: unknown) {
   return JSON.parse(JSON.stringify(value));
 }
-
-const classSelect = {
-  id: true,
-  name: true,
-  isActive: true,
-  createdAt: true,
-  updatedAt: true,
-  _count: { select: { students: true } } as unknown as object,
-} as const;
 
 export async function GET(request: Request) {
   const auth = await requireAuthenticatedUser();
@@ -44,6 +30,7 @@ export async function GET(request: Request) {
   }
 
   const where = {
+    schoolId: auth.schoolId,
     isActive: status ? status === "AKTIF" : true,
     ...(search ? { name: { contains: search, mode: "insensitive" as const } } : {}),
   };
@@ -63,7 +50,7 @@ export async function GET(request: Request) {
 
     const withCounts = await Promise.all(
       classes.map(async (cls) => {
-        const count = await prisma.student.count({ where: { className: cls.name } });
+        const count = await prisma.student.count({ where: { schoolId: auth.schoolId, className: cls.name } });
         return { ...cls, studentCount: count };
       })
     );
@@ -91,11 +78,11 @@ export async function POST(request: Request) {
   try {
     const created = await prisma.$transaction(async (tx) => {
       const cls = await tx.schoolClass.create({
-        data: { name, isActive: true },
+        data: { schoolId: auth.schoolId, name, isActive: true },
         select: { id: true, name: true, isActive: true, createdAt: true, updatedAt: true },
       });
       await tx.auditLog.create({
-        data: { userId: auth.user.id, action: "CREATE", entityType: "SchoolClass", entityId: cls.id, newData: jsonValue(cls) },
+        data: { schoolId: auth.schoolId, userId: auth.user.id, action: "CREATE", entityType: "SchoolClass", entityId: cls.id, newData: jsonValue(cls) },
       });
       return cls;
     });
