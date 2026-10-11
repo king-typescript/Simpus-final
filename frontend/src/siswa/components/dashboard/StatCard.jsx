@@ -17,7 +17,7 @@ const iconConfig = {
   danger: {
     icon: FiAlertTriangle,
     bgClass: 'bg-rose-50',
-    textClass: 'text-rose-500',
+    textClass: 'text-rose-700',
     ring: 'ring-rose-50',
   },
 };

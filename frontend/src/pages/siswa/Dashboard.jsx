@@ -5,7 +5,6 @@
  *            kartu statistik, aksi cepat, pinjaman aktif, serta koleksi buku terbaru.
  * ==============================================================================
  */
-
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import WelcomeBanner from '../../siswa/components/dashboard/WelcomeBanner';
@@ -22,38 +21,45 @@ import { getActiveEbookLoans } from '../../utils/ebookStore';
 const staggerItem = {
   hidden: { opacity: 0, y: 12 },
   visible: (i) => ({
-    opacity: 1,
-    y: 0,
-    transition: { delay: i * 0.06, duration: 0.35, ease: 'easeOut' },
+    opacity: 1, y: 0, transition: { delay: i * 0.06, duration: 0.35, ease: 'easeOut' },
   }),
 };
 
-function formatSiswaStats(d, eLoansCount = 0) {
+// 1. DITAMBAHKAN: Fungsi helper untuk memformat data statistik
+function formatSiswaStats(d, ebookCount = 0) {
+  if (!d) return [
+    { id: 'dipinjam', label: 'Sedang Dipinjam', nilai: '0', satuan: 'Buku', tipe: 'warning' },
+    { id: 'selesai', label: 'Riwayat Pinjam', nilai: '0', satuan: 'Buku', tipe: 'success' },
+    { id: 'denda', label: 'Tunggakan Denda', nilai: 'Rp 0', satuan: '', tipe: 'danger' }
+  ];
+
   return [
     {
       id: 'dipinjam',
       label: 'Sedang Dipinjam',
-      nilai: String((d?.loans?.active ?? 0) + eLoansCount),
+      // Menggabungkan total buku fisik dan e-book yang dipinjam
+      nilai: String((d.loans?.active ?? 0) + ebookCount),
       satuan: 'Buku',
       tipe: 'warning',
     },
     {
       id: 'selesai',
       label: 'Riwayat Pinjam',
-      nilai: String(d?.recentLoans?.length ?? 0),
+      nilai: String(d.recentLoans?.length ?? 0),
       satuan: 'Buku',
       tipe: 'success',
     },
     {
       id: 'denda',
       label: 'Tunggakan Denda',
-      nilai: `Rp ${Number(d?.fines?.unpaidAmount ?? 0).toLocaleString('id-ID')}`,
+      nilai: `Rp ${Number(d.fines?.unpaidAmount ?? 0).toLocaleString('id-ID')}`,
       satuan: '',
       tipe: 'danger',
     },
   ];
 }
 
+// Helper untuk memformat data buku fisik aktif
 function formatActiveLoans(d) {
   if (!d?.activeLoans) return [];
   return d.activeLoans.flatMap((loan) =>
@@ -68,29 +74,48 @@ function formatActiveLoans(d) {
   );
 }
 
+// 2. DIPERBAIKI: Hanya ada satu deklarasi fungsi komponen utama
 export default function DashboardSiswa() {
   const { user } = useAuth();
-  const cachedResponse = DashboardService.getCached();
+  
+  // Pastikan getCached ada di DashboardService Anda, jika tidak, ganti nilainya jadi null
+  const cachedResponse = typeof DashboardService.getCached === 'function' ? DashboardService.getCached() : null;
   const cachedData = cachedResponse?.data?.data;
 
   const initialELoans = getActiveEbookLoans(user?.id || 'siswa-demo');
+  
   const [ebookLoans, setEbookLoans] = useState(initialELoans);
   const [stats, setStats] = useState(() => formatSiswaStats(cachedData, initialELoans.length));
   const [activeLoans, setActiveLoans] = useState(() => formatActiveLoans(cachedData));
   const [readingEbook, setReadingEbook] = useState(null);
+  
+  // 3. DITAMBAHKAN: State recentRead yang sebelumnya hilang
+  const [recentRead, setRecentRead] = useState(null);
 
   useEffect(() => {
     let mounted = true;
     const loadDashboard = async () => {
       try {
-        const res = await DashboardService.get(!cachedData);
+        // Pemanggilan API standar
+        const res = await DashboardService.get(); 
         if (mounted && res.data?.data) {
           const d = res.data.data;
           const eLoans = getActiveEbookLoans(user?.id || 'siswa-demo');
+          
           if (mounted) {
             setEbookLoans(eLoans);
             setStats(formatSiswaStats(d, eLoans.length));
             setActiveLoans(formatActiveLoans(d));
+            
+            // Memasukkan buku terakhir yang dikembalikan (jika ada)
+            if (d.recentLoans && d.recentLoans.length > 0) {
+              const lastLoan = d.recentLoans[0];
+              setRecentRead({
+                id: lastLoan.id,
+                judul: lastLoan.bookTitle || 'Buku Perpustakaan',
+                dikembalikan: lastLoan.returnedAt ? new Date(lastLoan.returnedAt).toLocaleDateString('id-ID') : '-'
+              });
+            }
           }
         }
       } catch (err) {
@@ -98,38 +123,27 @@ export default function DashboardSiswa() {
       }
     };
     loadDashboard();
+    
     return () => {
       mounted = false;
     };
-  }, [cachedData, user?.id]);
+  }, [user?.id]); // Pastikan efek diperbarui jika ID user berubah
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* 1. Banner Ucapan Selamat Datang & Pengumuman */}
       <motion.div custom={0} initial="hidden" animate="visible" variants={staggerItem}>
         <WelcomeBanner />
       </motion.div>
-
-      {/* 2. Tombol Pintasan Aksi Cepat */}
       <motion.div custom={1} initial="hidden" animate="visible" variants={staggerItem}>
         <QuickActionsCard />
       </motion.div>
-
-      {/* 3. Kartu Statistik Peminjaman Siswa */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
         {stats.map((stat, i) => (
           <motion.div key={stat.id} custom={i + 2} initial="hidden" animate="visible" variants={staggerItem}>
-            <StatCard
-              label={stat.label}
-              nilai={stat.nilai}
-              satuan={stat.satuan}
-              tipe={stat.tipe}
-            />
+            <StatCard label={stat.label} nilai={stat.nilai} satuan={stat.satuan} tipe={stat.tipe} />
           </motion.div>
         ))}
       </div>
-
-      {/* 4. Konten Utama: Buku Aktif Dipinjam & Rekomendasi Koleksi */}
       <motion.div custom={5} initial="hidden" animate="visible" variants={staggerItem}>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-stretch">
           <ActiveLoansCard
@@ -138,7 +152,7 @@ export default function DashboardSiswa() {
             onReadEbook={(ebk) => setReadingEbook(ebk)}
           />
           <div className="flex flex-col gap-4 sm:gap-5 h-full">
-            <RecentReadCard />
+            <RecentReadCard buku={recentRead} />
             <NewCollectionCard />
           </div>
         </div>
