@@ -1,7 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { noStoreHeaders, requireLibrarian } from "@/lib/auth";
-import { invalidateDashboardCache } from "@/lib/dashboardCache";
+import { getBookCoverUrl } from "@/lib/book-cover-url";
+import { deleteBookCover } from "@/lib/book-cover-storage";
+import { noStoreHeaders, requireAuthenticatedUser, requireLibrarian } from "@/lib/auth";
+import {
+  getClientIp,
+  hasOnlyFields,
+  isJsonContentType,
+  isRecord,
+  isUuid,
+  normalizeText,
+  parseBookCoverUrl,
+  parseOptionalString,
+  parseRequiredString,
+} from "@/lib/validation";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -9,284 +21,101 @@ type Context = { params: Promise<{ id: string }> };
 function errorResponse(error: string, status: number) {
   return NextResponse.json({ error }, { status, headers: noStoreHeaders });
 }
-
-function uuid(value: unknown): value is string {
-  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-function record(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
 function jsonValue(value: unknown) {
   return JSON.parse(JSON.stringify(value));
 }
 
+
 const detailSelect = {
-  id: true,
-  isbn: true,
-  title: true,
-  isActive: true,
-  publisher: true,
-  publicationYear: true,
-  pageCount: true,
-  isEbook: true,
-  fileUrl: true,
-  edition: true,
-  description: true,
-  coverUrl: true,
-  createdAt: true,
-  updatedAt: true,
+  id: true, isbn: true, title: true, isActive: true, publisher: true, publicationYear: true,
+  edition: true, description: true, coverUrl: true, createdAt: true, updatedAt: true,
   category: { select: { id: true, name: true, ddcCode: true, description: true } },
   authors: { select: { id: true, name: true }, orderBy: { name: "asc" as const } },
-  copies: {
-    select: {
-      id: true,
-      barcode: true,
-      status: true,
-      conditionNote: true,
-      acquiredAt: true,
-      shelf: { select: { id: true, code: true, name: true, location: true } },
-    },
-    orderBy: { barcode: "asc" as const },
-  },
+  copies: { select: { id: true, barcode: true, status: true, conditionNote: true, acquiredAt: true, shelf: { select: { id: true, code: true, name: true, location: true } } }, orderBy: { barcode: "asc" as const } },
 } as const;
 
 export async function GET(_request: Request, context: Context) {
+  const auth = await requireAuthenticatedUser();
+  if (!auth.ok) return errorResponse("Autentikasi diperlukan.", 401);
   const { id } = await context.params;
-  if (!uuid(id)) return errorResponse("ID buku tidak valid.", 422);
-
+  if (!isUuid(id)) return errorResponse("ID buku tidak valid.", 422);
   try {
-    const data = await prisma.book.findFirst({
-      where: { id, isActive: true, category: { is: { isActive: true } } },
-      select: detailSelect,
-    });
-
+    const data = await prisma.book.findFirst({ where: { id, schoolId: auth.schoolId, isActive: true, category: { is: { isActive: true } } }, select: detailSelect });
     if (!data) return errorResponse("Buku tidak ditemukan.", 404);
-
-    const firstShelf = data.copies.find((c) => c.shelf)?.shelf?.name || null;
-    return NextResponse.json(
-      { data: { ...data, shelf: firstShelf } },
-      { headers: noStoreHeaders }
-    );
-  } catch {
-    return errorResponse("Terjadi kesalahan pada server.", 500);
-  }
+    return NextResponse.json({ data: { ...data, coverUrl: await getBookCoverUrl(data.coverUrl) } }, { headers: noStoreHeaders });
+  } catch { return errorResponse("Terjadi kesalahan pada server.", 500); }
 }
 
 export async function PATCH(request: Request, context: Context) {
   const auth = await requireLibrarian();
   if (!auth.ok) return errorResponse("Tidak memiliki akses.", auth.status);
-
   const { id } = await context.params;
-  if (!uuid(id)) return errorResponse("ID buku tidak valid.", 422);
-
+  if (!isUuid(id)) return errorResponse("ID buku tidak valid.", 422);
+  if (!isJsonContentType(request)) return errorResponse("Content-Type harus application/json.", 415);
   let body: unknown;
   try { body = await request.json(); } catch { return errorResponse("Body JSON tidak valid.", 400); }
-  if (!record(body)) return errorResponse("Body request tidak valid.", 422);
+  if (!isRecord(body) || !hasOnlyFields(body, ["isbn", "title", "publisher", "publicationYear", "edition", "description", "coverUrl", "categoryId", "authorIds"])) return errorResponse("Body request tidak valid.", 422);
 
-  const data: {
-    isbn?: string | null;
-    title?: string;
-    publisher?: string | null;
-    publicationYear?: number | null;
-    pageCount?: number | null;
-    edition?: string | null;
-    description?: string | null;
-    coverUrl?: string | null;
-    fileUrl?: string | null;
-    isEbook?: boolean;
-    categoryId?: string;
-  } = {};
-
+  const data: { isbn?: string | null; title?: string; publisher?: string | null; publicationYear?: number | null; edition?: string | null; description?: string | null; coverUrl?: string | null; categoryId?: string } = {};
   if ("isbn" in body) {
     if (body.isbn !== null && typeof body.isbn !== "string") return errorResponse("ISBN tidak valid.", 422);
-    const value = typeof body.isbn === "string" && body.isbn.trim() ? body.isbn.trim() : null;
-    if (value !== null && value.length > 20) return errorResponse("ISBN tidak valid.", 422);
+    const value = typeof body.isbn === "string" ? normalizeText(body.isbn) || null : null;
+    if (value !== null && (value.length > 20 || !/^[0-9Xx-]{10,17}$/.test(value))) return errorResponse("ISBN tidak valid.", 422);
     data.isbn = value;
   }
-
   if ("title" in body) {
-    if (typeof body.title !== "string" || !body.title.trim() || body.title.trim().length > 300) return errorResponse("Judul tidak valid.", 422);
-    data.title = body.title.trim();
+    const result = parseRequiredString(body.title, { field: "Judul", maxLength: 300 });
+    if (!result.ok) return errorResponse(result.error, 422);
+    data.title = result.value;
   }
-
-  for (const field of ["publisher", "edition", "description", "coverUrl", "fileUrl"] as const) {
+  const optionalFields = [
+    ["publisher", 200],
+    ["edition", 100],
+    ["description", 5000],
+  ] as const;
+  for (const [field, maxLength] of optionalFields) {
     if (field in body) {
-      if (body[field] !== null && typeof body[field] !== "string") return errorResponse(`${field} tidak valid.`, 422);
-      const value = typeof body[field] === "string" && body[field].trim() ? body[field].trim() : null;
-      data[field] = value;
+      const result = parseOptionalString(body[field], { field, maxLength });
+      if (!result.ok) return errorResponse(result.error, 422);
+      data[field] = result.value ?? null;
     }
   }
-
-  if ("isEbook" in body) {
-    data.isEbook = Boolean(body.isEbook);
+  if ("coverUrl" in body) {
+    const result = parseBookCoverUrl(body.coverUrl, "URL sampul");
+    if (!result.ok) return errorResponse(result.error, 422);
+    data.coverUrl = result.value;
   }
-
-  if ("pageCount" in body) {
-    if (body.pageCount !== null && (typeof body.pageCount !== "number" || !Number.isInteger(body.pageCount) || body.pageCount < 1)) {
-      return errorResponse("Jumlah halaman tidak valid.", 422);
-    }
-    data.pageCount = body.pageCount as number | null;
-  }
-
   if ("publicationYear" in body) {
-    if (body.publicationYear !== null && (typeof body.publicationYear !== "number" || !Number.isInteger(body.publicationYear) || body.publicationYear < 1000 || body.publicationYear > new Date().getFullYear() + 1)) {
-      return errorResponse("Tahun terbit tidak valid.", 422);
-    }
+    if (body.publicationYear !== null && (typeof body.publicationYear !== "number" || !Number.isSafeInteger(body.publicationYear) || body.publicationYear < 1000 || body.publicationYear > new Date().getFullYear() + 1)) return errorResponse("Tahun terbit tidak valid.", 422);
     data.publicationYear = body.publicationYear as number | null;
   }
-
-  if ("categoryId" in body && body.categoryId !== null && typeof body.categoryId === "string" && uuid(body.categoryId)) {
+  if ("categoryId" in body) {
+    if (!isUuid(body.categoryId)) return errorResponse("Category ID tidak valid.", 422);
     data.categoryId = body.categoryId;
   }
-
-  const categoryName = typeof body.categoryName === "string" && body.categoryName.trim() ? body.categoryName.trim() : undefined;
-  const authorName = typeof body.authorName === "string" && body.authorName.trim() ? body.authorName.trim() : undefined;
   const authorIds = "authorIds" in body ? body.authorIds : undefined;
-  if (authorIds !== undefined && (!Array.isArray(authorIds) || !authorIds.length || authorIds.length > 20 || !authorIds.every(uuid))) {
-    return errorResponse("Daftar penulis tidak valid.", 422);
-  }
-
-  const shelfName = typeof body.shelf === "string" ? body.shelf.trim() : undefined;
-  const newStock = typeof body.stock === "number" && Number.isInteger(body.stock) && body.stock >= 0 ? body.stock : undefined;
+  if (authorIds !== undefined && (!Array.isArray(authorIds) || !authorIds.length || authorIds.length > 20 || !authorIds.every(isUuid))) return errorResponse("Daftar penulis tidak valid.", 422);
+  if (!Object.keys(data).length && authorIds === undefined) return errorResponse("Tidak ada perubahan.", 422);
 
   try {
-    const updated = await prisma.$transaction(async (tx) => {
-      const existingBook = await tx.book.findFirst({ where: { id, isActive: true }, select: { id: true, categoryId: true, isEbook: true } });
-      if (!existingBook) return null;
-
-      if (!data.categoryId && categoryName) {
-        let existingCategory = await tx.category.findFirst({
-          where: { name: { equals: categoryName, mode: "insensitive" } },
-        });
-        if (existingCategory) {
-          data.categoryId = existingCategory.id;
-        } else {
-          const createdCat = await tx.category.create({
-            data: {
-              name: categoryName,
-              ddcCode: Math.floor(100 + Math.random() * 900).toString(),
-              isActive: true,
-            },
-          });
-          data.categoryId = createdCat.id;
-        }
-      }
-
-      if (data.categoryId && !(await tx.category.findFirst({ where: { id: data.categoryId, isActive: true }, select: { id: true } }))) {
-        throw new Error("CATEGORY_NOT_FOUND");
-      }
-
-      let uniqueAuthors = authorIds === undefined ? undefined : [...new Set(authorIds)];
-      if (!uniqueAuthors && authorName) {
-        let existingAuthor = await tx.author.findFirst({
-          where: { name: { equals: authorName, mode: "insensitive" } },
-        });
-        if (!existingAuthor) {
-          existingAuthor = await tx.author.create({ data: { name: authorName } });
-        }
-        uniqueAuthors = [existingAuthor.id];
-      }
-
+    const result = await prisma.$transaction(async (tx) => {
+      const current = await tx.book.findFirst({ where: { id, schoolId: auth.schoolId, isActive: true }, select: detailSelect });
+      if (!current) return null;
+      if (data.categoryId && !(await tx.category.findFirst({ where: { id: data.categoryId, schoolId: auth.schoolId, isActive: true }, select: { id: true } }))) throw new Error("CATEGORY_NOT_FOUND");
+      const uniqueAuthors = authorIds === undefined ? undefined : [...new Set(authorIds)];
       if (uniqueAuthors) {
-        const count = await tx.author.count({ where: { id: { in: uniqueAuthors } } });
+        const count = await tx.author.count({ where: { id: { in: uniqueAuthors }, schoolId: auth.schoolId } });
         if (count !== uniqueAuthors.length) throw new Error("AUTHOR_NOT_FOUND");
       }
-
-      // Resolve shelf update
-      let resolvedShelfId: string | null | undefined = undefined;
-      if (shelfName !== undefined) {
-        if (shelfName) {
-          let existingShelf = await tx.shelf.findFirst({
-            where: {
-              OR: [
-                { code: { equals: shelfName, mode: "insensitive" } },
-                { name: { equals: shelfName, mode: "insensitive" } },
-              ],
-            },
-          });
-          if (!existingShelf) {
-            existingShelf = await tx.shelf.create({
-              data: {
-                code: shelfName.toUpperCase().replace(/\s+/g, "-"),
-                name: shelfName,
-              },
-            });
-          }
-          resolvedShelfId = existingShelf.id;
-        } else {
-          resolvedShelfId = null;
-        }
-      }
-
-      await tx.book.update({
-        where: { id },
-        data: {
-          ...data,
-          ...(uniqueAuthors ? { authors: { set: uniqueAuthors.map((authorId) => ({ id: authorId })) } } : {}),
-        },
-        select: detailSelect,
-      });
-
-      // Update shelf on existing copies if shelf was updated
-      if (resolvedShelfId !== undefined) {
-        await tx.bookCopy.updateMany({
-          where: { bookId: id },
-          data: { shelfId: resolvedShelfId },
-        });
-      }
-
-      // Stock adjustment for physical books
-      if (newStock !== undefined && !data.isEbook) {
-        const currentCopies = await tx.bookCopy.findMany({
-          where: { bookId: id, isActive: true },
-          select: { id: true, status: true },
-        });
-
-        if (newStock > currentCopies.length) {
-          const countToAdd = newStock - currentCopies.length;
-          const copiesData = Array.from({ length: countToAdd }).map((_, i) => ({
-            bookId: id,
-            shelfId: resolvedShelfId !== undefined ? resolvedShelfId : null,
-            barcode: `BC-${Date.now().toString().slice(-6)}-${currentCopies.length + i + 1}`,
-            status: "TERSEDIA" as const,
-            isActive: true,
-            acquiredAt: new Date(),
-          }));
-          await tx.bookCopy.createMany({ data: copiesData });
-        } else if (newStock < currentCopies.length) {
-          const availableCopies = currentCopies.filter((c) => c.status === "TERSEDIA");
-          const countToRemove = currentCopies.length - newStock;
-          const copiesToDeactivate = availableCopies.slice(0, countToRemove);
-          if (copiesToDeactivate.length > 0) {
-            await tx.bookCopy.updateMany({
-              where: { id: { in: copiesToDeactivate.map((c) => c.id) } },
-              data: { isActive: false },
-            });
-          }
-        }
-      }
-
-      const finalBook = await tx.book.findUnique({ where: { id }, select: detailSelect });
-      await tx.auditLog.create({
-        data: {
-          userId: auth.user.id,
-          action: "UPDATE",
-          entityType: "Book",
-          entityId: id,
-          newData: jsonValue(finalBook),
-        },
-      });
-
-      invalidateDashboardCache();
-      return {
-        ...finalBook,
-        shelf: shelfName !== undefined ? shelfName : finalBook?.copies.find(c => c.shelf)?.shelf?.name || null,
-      };
+      const book = await tx.book.update({ where: { id, schoolId: auth.schoolId }, data: { ...data, ...(uniqueAuthors ? { authors: { set: uniqueAuthors.map((authorId) => ({ id: authorId })) } } : {}) }, select: detailSelect });
+      await tx.auditLog.create({ data: { schoolId: auth.schoolId, userId: auth.user.id, action: "UPDATE", entityType: "Book", entityId: id, oldData: jsonValue(current), newData: jsonValue(book), ipAddress: getClientIp(request) } });
+      return { book, previousCoverUrl: current.coverUrl };
     });
-
-    return updated ? NextResponse.json({ data: updated }, { headers: noStoreHeaders }) : errorResponse("Buku tidak ditemukan.", 404);
+    if (!result) return errorResponse("Buku tidak ditemukan.", 404);
+    if ("coverUrl" in data && data.coverUrl !== result.previousCoverUrl) {
+      await deleteBookCover(result.previousCoverUrl);
+    }
+    return NextResponse.json({ data: { ...result.book, coverUrl: await getBookCoverUrl(result.book.coverUrl) } }, { headers: noStoreHeaders });
   } catch (error: unknown) {
     if (error instanceof Error && error.message === "CATEGORY_NOT_FOUND") return errorResponse("Kategori tidak ditemukan.", 422);
     if (error instanceof Error && error.message === "AUTHOR_NOT_FOUND") return errorResponse("Salah satu penulis tidak ditemukan.", 422);
@@ -295,103 +124,19 @@ export async function PATCH(request: Request, context: Context) {
   }
 }
 
-export async function DELETE(_request: Request, context: Context) {
+export async function DELETE(request: Request, context: Context) {
   const auth = await requireLibrarian();
   if (!auth.ok) return errorResponse("Tidak memiliki akses.", auth.status);
   const { id } = await context.params;
-  if (!uuid(id)) return errorResponse("ID buku tidak valid.", 422);
-
+  if (!isUuid(id)) return errorResponse("ID buku tidak valid.", 422);
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const book = await tx.book.findFirst({
-        where: { id },
-        select: {
-          id: true,
-          title: true,
-          isbn: true,
-          copies: {
-            select: { id: true, status: true },
-          },
-        },
-      });
-
-      if (!book) return "NOT_FOUND";
-
-      const hasBorrowedCopy = book.copies.some((c) => c.status === "DIPINJAM");
-      if (hasBorrowedCopy) {
-        return "HAS_BORROWED_COPIES";
-      }
-
-      const copyIds = book.copies.map((c) => c.id);
-      const loanCount = copyIds.length > 0
-        ? await tx.loanItem.count({ where: { copyId: { in: copyIds } } })
-        : 0;
-
-      if (loanCount > 0) {
-        await tx.book.update({
-          where: { id },
-          data: { isActive: false },
-        });
-
-        if (copyIds.length > 0) {
-          await tx.bookCopy.updateMany({
-            where: { id: { in: copyIds } },
-            data: { isActive: false },
-          });
-        }
-
-        await tx.auditLog.create({
-          data: {
-            userId: auth.user.id,
-            action: "ARCHIVE",
-            entityType: "Book",
-            entityId: id,
-            oldData: { title: book.title, isbn: book.isbn, copyCount: book.copies.length, loanHistoryCount: loanCount },
-          },
-        });
-
-        return "ARCHIVED";
-      } else {
-        if (copyIds.length > 0) {
-          await tx.bookCopy.deleteMany({
-            where: { id: { in: copyIds } },
-          });
-        }
-
-        await tx.book.delete({
-          where: { id },
-        });
-
-        await tx.auditLog.create({
-          data: {
-            userId: auth.user.id,
-            action: "DELETE",
-            entityType: "Book",
-            entityId: id,
-            oldData: { title: book.title, isbn: book.isbn, copyCount: book.copies.length },
-          },
-        });
-
-        return "DELETED";
-      }
+    const deleted = await prisma.$transaction(async (tx) => {
+      const current = await tx.book.findFirst({ where: { id, schoolId: auth.schoolId, isActive: true }, select: detailSelect });
+      if (!current) return false;
+      await tx.book.update({ where: { id, schoolId: auth.schoolId }, data: { isActive: false } });
+      await tx.auditLog.create({ data: { schoolId: auth.schoolId, userId: auth.user.id, action: "DEACTIVATE", entityType: "Book", entityId: id, oldData: jsonValue(current), newData: jsonValue({ ...current, isActive: false }), ipAddress: getClientIp(request) } });
+      return true;
     });
-
-    if (result === "NOT_FOUND") return errorResponse("Buku tidak ditemukan.", 404);
-    if (result === "HAS_BORROWED_COPIES") {
-      return errorResponse("Buku tidak dapat dihapus karena masih ada eksemplar yang sedang dipinjam.", 400);
-    }
-
-    invalidateDashboardCache();
-
-    if (result === "ARCHIVED") {
-      return NextResponse.json(
-        { data: { action: "ARCHIVED" }, message: "Buku dan seluruh eksemplar berhasil diarsipkan karena memiliki riwayat sirkulasi." },
-        { status: 200, headers: noStoreHeaders }
-      );
-    }
-
-    return new NextResponse(null, { status: 204, headers: noStoreHeaders });
-  } catch {
-    return errorResponse("Terjadi kesalahan pada server saat menghapus buku.", 500);
-  }
+    return deleted ? new NextResponse(null, { status: 204 }) : errorResponse("Buku tidak ditemukan.", 404);
+  } catch { return errorResponse("Terjadi kesalahan pada server.", 500); }
 }

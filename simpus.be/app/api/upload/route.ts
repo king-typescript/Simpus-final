@@ -63,6 +63,8 @@ export async function POST(request: Request) {
     const extension = getExtension(blob.type, blob.name || "file");
     const filename = `${Date.now()}-${randomUUID().slice(0, 8)}.${extension}`;
     const uploadDir = join(process.cwd(), "public", "uploads");
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(uploadDir, { recursive: true });
     const filePath = join(uploadDir, filename);
 
     const buffer = Buffer.from(await blob.arrayBuffer());
