@@ -45,6 +45,14 @@ enum LoanStatus {
   DIBATALKAN
 }
 
+enum LoanRequestStatus {
+  MENUNGGU_KONFIRMASI
+  DISETUJUI
+  DITOLAK
+  KEDALUWARSA
+  DIBATALKAN
+}
+
 enum FineType {
   TERLAMBAT
 }
@@ -103,8 +111,9 @@ model User {
 
   school           School        @relation(fields: [schoolId], references: [id])
   student          Student?
-  processedLoans   Loan[]        @relation("LoanProcessedBy")
-  receivedPayments FinePayment[]
+  processedLoans        Loan[]        @relation("LoanProcessedBy")
+  processedLoanRequests  LoanRequest[] @relation("LoanRequestProcessedBy")
+  receivedPayments       FinePayment[]
   auditLogs        AuditLog[]
 
   @@unique([id, schoolId])
@@ -139,6 +148,8 @@ model School {
   bookCopies    BookCopy[]
   loans         Loan[]
   loanItems     LoanItem[]
+  loanRequests  LoanRequest[]
+  loanRequestItems LoanRequestItem[]
   fines         Fine[]
   finePayments  FinePayment[]
   auditLogs     AuditLog[]
@@ -163,6 +174,7 @@ model Student {
   school        School        @relation(fields: [schoolId], references: [id])
   user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   loans         Loan[]
+  loanRequests  LoanRequest[]
   ebookAccesses EbookAccess[]
 
   @@unique([id, schoolId])
@@ -227,8 +239,9 @@ model Book {
   school   School     @relation(fields: [schoolId], references: [id])
   category Category   @relation(fields: [categoryId, schoolId], references: [id, schoolId])
   authors  Author[]
-  copies   BookCopy[]
-  ebook    Ebook?
+  copies          BookCopy[]
+  ebook           Ebook?
+  loanRequestItems LoanRequestItem[]
 
   @@unique([schoolId, isbn])
   @@unique([id, schoolId])
@@ -318,10 +331,10 @@ model BookCopy {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
-  school    School     @relation(fields: [schoolId], references: [id])
-  book      Book       @relation(fields: [bookId, schoolId], references: [id, schoolId])
-  shelf     Shelf?     @relation(fields: [shelfId, schoolId], references: [id, schoolId], onDelete: Restrict)
-  loanItems LoanItem[]
+  school           School             @relation(fields: [schoolId], references: [id])
+  book             Book               @relation(fields: [bookId, schoolId], references: [id, schoolId])
+  shelf            Shelf?             @relation(fields: [shelfId, schoolId], references: [id, schoolId], onDelete: Restrict)
+  loanItems        LoanItem[]
 
   @@unique([id, schoolId])
   @@unique([schoolId, barcode])
@@ -331,6 +344,53 @@ model BookCopy {
   @@index([status])
   @@index([isActive])
   @@map("book_copies")
+}
+
+model LoanRequest {
+  id            String            @id @default(uuid())
+  schoolId      String
+  studentId     String
+  processedById String?
+  loanId        String?           @unique
+  status        LoanRequestStatus @default(MENUNGGU_KONFIRMASI)
+  requestedAt   DateTime          @default(now())
+  expiresAt     DateTime
+  confirmedAt   DateTime?
+  dueDate       DateTime?
+  notes         String?
+  rejectionNote String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  school      School            @relation(fields: [schoolId], references: [id])
+  student     Student           @relation(fields: [studentId, schoolId], references: [id, schoolId])
+  processedBy User?             @relation("LoanRequestProcessedBy", fields: [processedById, schoolId], references: [id, schoolId])
+  loan        Loan?             @relation(fields: [loanId], references: [id])
+  items       LoanRequestItem[]
+
+  @@unique([id, schoolId])
+  @@index([schoolId, status])
+  @@index([studentId, status])
+  @@index([expiresAt])
+  @@map("loan_requests")
+}
+
+model LoanRequestItem {
+  id        String @id @default(uuid())
+  schoolId  String
+  requestId String
+  bookId    String
+  activeKey String? @unique
+
+  school  School      @relation(fields: [schoolId], references: [id])
+  request LoanRequest @relation(fields: [requestId, schoolId], references: [id, schoolId], onDelete: Cascade)
+  book    Book        @relation(fields: [bookId, schoolId], references: [id, schoolId])
+
+  @@unique([id, schoolId])
+  @@unique([requestId, bookId])
+  @@index([requestId])
+  @@index([bookId])
+  @@map("loan_request_items")
 }
 
 model Loan {
@@ -348,8 +408,9 @@ model Loan {
 
   school      School     @relation(fields: [schoolId], references: [id])
   student     Student    @relation(fields: [studentId, schoolId], references: [id, schoolId])
-  processedBy User       @relation("LoanProcessedBy", fields: [processedById, schoolId], references: [id, schoolId])
+  processedBy User         @relation("LoanProcessedBy", fields: [processedById, schoolId], references: [id, schoolId])
   items       LoanItem[]
+  request     LoanRequest?
 
   @@unique([id, schoolId])
   @@index([studentId, status])

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { BookStatus, FineStatus, LoanStatus, Prisma } from "@/app/generated/prisma/client";
+import { BookStatus, FineStatus, LoanRequestStatus, LoanStatus, Prisma } from "@/app/generated/prisma/client";
 import { noStoreHeaders, requireAuthenticatedUser } from "@/lib/auth";
 import { calculateDaysLate } from "@/lib/fine";
 import { getBookCoverUrl } from "@/lib/book-cover-url";
@@ -82,14 +82,16 @@ async function getStudentDashboard(userId: string, schoolId: string) {
   if (!student) throw new Error("STUDENT_NOT_FOUND");
 
   const now = new Date();
-  const [activeLoanCount, overdueLoanCount, unpaidFineCount, unpaidFineSummary, activeLoans, recentLoans, unpaidFines] = await prisma.$transaction([
+  const [activeLoanCount, overdueLoanCount, activeRequestCount, unpaidFineCount, unpaidFineSummary, activeLoans, activeRequests, recentLoans, unpaidFines] = await prisma.$transaction([
     prisma.loan.count({ where: { schoolId, studentId: student.id, status: { in: activeLoanStatuses } } }),
     prisma.loan.count({ where: { schoolId, studentId: student.id, status: { in: activeLoanStatuses }, dueDate: { lt: now } } }),
+    prisma.loanRequest.count({ where: { schoolId, studentId: student.id, status: LoanRequestStatus.MENUNGGU_KONFIRMASI, expiresAt: { gt: now } } }),
     prisma.fine.count({ where: { schoolId, status: FineStatus.BELUM_DIBAYAR, loanItem: { loan: { studentId: student.id } } } }),
     prisma.fine.aggregate({ where: { schoolId, status: FineStatus.BELUM_DIBAYAR, loanItem: { loan: { studentId: student.id } } }, _sum: { amount: true } }),
     prisma.loan.findMany({ where: { schoolId, studentId: student.id, status: { in: activeLoanStatuses } }, orderBy: [{ dueDate: "asc" }, { id: "asc" }], select: { id: true, loanDate: true, dueDate: true, returnedAt: true, status: true, notes: true, items: { where: { returnedAt: null }, select: { id: true, copyId: true, returnedAt: true, copy: { select: { id: true, barcode: true, book: { select: { id: true, title: true, publisher: true, coverUrl: true } } } } } } } }),
     prisma.loan.findMany({ where: { schoolId, studentId: student.id }, orderBy: [{ loanDate: "desc" }, { id: "desc" }], take: 10, select: { id: true, loanDate: true, dueDate: true, returnedAt: true, status: true, notes: true, items: { select: { id: true, returnedAt: true, copy: { select: { barcode: true, book: { select: { id: true, title: true } } } } } } } }),
-    prisma.fine.findMany({
+    prisma.loanRequest.findMany({ where: { schoolId, studentId: student.id, status: { in: [LoanRequestStatus.MENUNGGU_KONFIRMASI, LoanRequestStatus.DISETUJUI] }, expiresAt: { gt: now } }, orderBy: [{ requestedAt: "desc" }, { id: "desc" }], take: 5, select: { id: true, status: true, requestedAt: true, expiresAt: true, rejectionNote: true, loanId: true, items: { orderBy: { id: "asc" }, select: { id: true, book: { select: { id: true, title: true, coverUrl: true } } } } } }),
+     prisma.fine.findMany({
       where: { schoolId, status: FineStatus.BELUM_DIBAYAR, loanItem: { loan: { studentId: student.id } } },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 10,
@@ -120,6 +122,8 @@ async function getStudentDashboard(userId: string, schoolId: string) {
     data: {
       student,
       loans: { active: activeLoanCount, overdue: overdueLoanCount },
+      requests: { active: activeRequestCount },
+      activeRequests,
       fines: { unpaidCount: unpaidFineCount, unpaidAmount: money(unpaidFineSummary._sum.amount) },
       activeLoans: await serializeActiveLoanCovers(activeLoans.map((loan) => ({ ...loan, daysLate: calculateDaysLate(loan.dueDate, now) }))),
       recentLoans,
