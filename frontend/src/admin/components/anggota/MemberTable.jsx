@@ -52,7 +52,7 @@ export function MemberTable({ members, onEdit, onDelete, onOpenCard }) {
                   </td>
                   <td className="px-5 py-3.5">
                     <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                      {member.className}
+                      {member.class?.name || member.className || "-"}
                     </span>
                   </td>
                   <td className="px-5 py-3.5 text-xs text-slate-600">

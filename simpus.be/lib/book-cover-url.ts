@@ -28,21 +28,28 @@ function getPresignedUrlTtl(): number {
   return ttl;
 }
 
-function getContentType(key: string): "image/jpeg" | "image/png" | "image/webp" {
+function getContentType(key: string): "image/jpeg" | "image/png" | "image/webp" | "image/gif" | "image/bmp" | "image/avif" {
   if (key.endsWith(".png")) return "image/png";
   if (key.endsWith(".webp")) return "image/webp";
+  if (key.endsWith(".gif")) return "image/gif";
+  if (key.endsWith(".bmp")) return "image/bmp";
+  if (key.endsWith(".avif")) return "image/avif";
   return "image/jpeg";
 }
 
 export async function getBookCoverUrl(
   key: string | null | undefined,
 ): Promise<string | null> {
-  if (!key) return null;
+  if (typeof key !== "string" || !key) return null;
+
+  if (key.startsWith("/uploads/") || key.startsWith("http://") || key.startsWith("https://") || key.startsWith("data:")) {
+    return key;
+  }
 
   if (!isBookCoverKey(key)) {
     try {
       const externalUrl = new URL(key);
-      return externalUrl.protocol === "https:" ? key : null;
+      return externalUrl.protocol === "https:" || externalUrl.protocol === "http:" ? key : null;
     } catch {
       return null;
     }

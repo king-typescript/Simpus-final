@@ -57,10 +57,18 @@ function mockUserLookup(user: UserLookupResult) {
 
 const validUser = {
   id: "user-1",
+  schoolId: "school-1",
   username: "librarian",
   name: "Librarian",
   role: "PUSTAKAWAN" as const,
   status: "AKTIF" as const,
+  mustChangePassword: false,
+  school: {
+    id: "school-1",
+    code: "SCH",
+    name: "Sekolah 1",
+    isActive: true,
+  },
 };
 
 function mockAuthCookie(token?: string) {
@@ -99,12 +107,14 @@ describe("createAuthToken and verifyAuthToken", () => {
   it("creates and verifies a valid token", async () => {
     const token = await createAuthToken({
       userId: "user-1",
+      schoolId: "school-1",
       role: "PUSTAKAWAN",
     });
 
     const payload = await verifyAuthToken(token);
 
     expect(payload.userId).toBe("user-1");
+    expect(payload.schoolId).toBe("school-1");
     expect(payload.role).toBe("PUSTAKAWAN");
     expect(payload.iss).toBe("simpus-satak");
     expect(payload.aud).toBe("simpus-satak-api");
@@ -114,7 +124,7 @@ describe("createAuthToken and verifyAuthToken", () => {
   });
 
   it("generates unique tokens", async () => {
-    const payload = { userId: "user-1", role: "PUSTAKAWAN" as const };
+    const payload = { userId: "user-1", schoolId: "school-1", role: "PUSTAKAWAN" as const };
 
     const first = await createAuthToken(payload);
     const second = await createAuthToken(payload);
@@ -129,7 +139,7 @@ describe("createAuthToken and verifyAuthToken", () => {
     const invalidToken =
       token ??
       (await createTestToken(
-        { userId: "user-1", role: "PUSTAKAWAN" },
+        { userId: "user-1", schoolId: "school-1", role: "PUSTAKAWAN" },
         { secret: "different-secret-012345678901234567890" },
       ));
 
@@ -138,7 +148,7 @@ describe("createAuthToken and verifyAuthToken", () => {
 
   it("rejects expired token", async () => {
     const token = await createTestToken(
-      { userId: "user-1", role: "PUSTAKAWAN" },
+      { userId: "user-1", schoolId: "school-1", role: "PUSTAKAWAN" },
       { expiration: "0s" },
     );
 
@@ -147,7 +157,7 @@ describe("createAuthToken and verifyAuthToken", () => {
 
   it("rejects token with invalid issuer", async () => {
     const token = await createTestToken(
-      { userId: "user-1", role: "PUSTAKAWAN" },
+      { userId: "user-1", schoolId: "school-1", role: "PUSTAKAWAN" },
       { issuer: "wrong-issuer" },
     );
 
@@ -156,7 +166,7 @@ describe("createAuthToken and verifyAuthToken", () => {
 
   it("rejects token with invalid audience", async () => {
     const token = await createTestToken(
-      { userId: "user-1", role: "PUSTAKAWAN" },
+      { userId: "user-1", schoolId: "school-1", role: "PUSTAKAWAN" },
       { audience: "wrong-audience" },
     );
 
@@ -164,21 +174,33 @@ describe("createAuthToken and verifyAuthToken", () => {
   });
 
   it.each([
-    [{ userId: "user-1", role: "ADMIN" }, "Token auth tidak valid."],
-    [{ userId: "", role: "PUSTAKAWAN" }, "Token auth tidak valid."],
-    [{ role: "PUSTAKAWAN" }, "Token auth tidak valid."],
-    [{ userId: "user-1" }, "Token auth tidak valid."],
+    [{ userId: "user-1", schoolId: "school-1", role: "ADMIN" }, "Token auth tidak valid."],
+    [{ userId: "", schoolId: "school-1", role: "PUSTAKAWAN" }, "Token auth tidak valid."],
+    [{ schoolId: "school-1", role: "PUSTAKAWAN" }, "Token auth tidak valid."],
+    [{ userId: "user-1", schoolId: "school-1" }, "Token auth tidak valid."],
+    [{ userId: "user-1", role: "PUSTAKAWAN" }, "Token auth tidak valid."],
+    [{ userId: "user-1", schoolId: "", role: "PUSTAKAWAN" }, "Token auth tidak valid."],
   ])("rejects invalid payload %j", async (payload, message) => {
     const token = await createTestToken(payload);
 
     await expect(verifyAuthToken(token)).rejects.toThrow(message);
   });
 
+  it("accepts SUPERADMIN token without schoolId", async () => {
+    const token = await createAuthToken({
+      userId: "super-1",
+      role: "SUPERADMIN",
+    } as never);
+
+    const payload = await verifyAuthToken(token);
+    expect(payload.role).toBe("SUPERADMIN");
+  });
+
   it("rejects token creation when AUTH_SECRET is missing", async () => {
     process.env.AUTH_SECRET = "";
 
     await expect(
-      createAuthToken({ userId: "user-1", role: "PUSTAKAWAN" }),
+      createAuthToken({ userId: "user-1", schoolId: "school-1", role: "PUSTAKAWAN" }),
     ).rejects.toThrow("AUTH_SECRET harus diatur dan minimal 32 byte.");
   });
 
@@ -186,7 +208,7 @@ describe("createAuthToken and verifyAuthToken", () => {
     process.env.AUTH_SECRET = "short-secret";
 
     await expect(
-      createAuthToken({ userId: "user-1", role: "PUSTAKAWAN" }),
+      createAuthToken({ userId: "user-1", schoolId: "school-1", role: "PUSTAKAWAN" }),
     ).rejects.toThrow("AUTH_SECRET harus diatur dan minimal 32 byte.");
   });
 });
@@ -205,6 +227,7 @@ describe("requireAuthenticatedUser", () => {
   it("returns authenticated active user", async () => {
     const token = await createAuthToken({
       userId: validUser.id,
+      schoolId: validUser.schoolId,
       role: validUser.role,
     });
 
@@ -214,6 +237,8 @@ describe("requireAuthenticatedUser", () => {
     await expect(requireAuthenticatedUser()).resolves.toEqual({
       ok: true,
       user: validUser,
+      schoolId: validUser.schoolId,
+      school: validUser.school,
     });
   });
 
@@ -226,6 +251,7 @@ describe("requireAuthenticatedUser", () => {
   ])("returns 401 for unavailable user ($label)", async ({ user }) => {
     const token = await createAuthToken({
       userId: validUser.id,
+      schoolId: validUser.schoolId,
       role: validUser.role,
     });
 
@@ -251,6 +277,7 @@ describe("requireAuthenticatedUser", () => {
   it("returns 401 when Prisma lookup fails", async () => {
     const token = await createAuthToken({
       userId: validUser.id,
+      schoolId: validUser.schoolId,
       role: validUser.role,
     });
 
@@ -278,33 +305,32 @@ describe("requireLibrarian", () => {
   it("returns active librarian", async () => {
     const token = await createAuthToken({
       userId: validUser.id,
+      schoolId: validUser.schoolId,
       role: validUser.role,
     });
 
     mockAuthCookie(token);
-    mockUserLookup({
-      id: validUser.id,
-      role: "PUSTAKAWAN",
-      status: "AKTIF",
-    });
+    mockUserLookup(validUser);
 
     await expect(requireLibrarian()).resolves.toEqual({
       ok: true,
-      user: { id: validUser.id, role: "PUSTAKAWAN", status: "AKTIF" },
+      user: validUser,
+      schoolId: validUser.schoolId,
     });
   });
 
   it("returns 403 for active non-librarian user", async () => {
     const token = await createAuthToken({
       userId: "student-1",
+      schoolId: "school-1",
       role: "SISWA",
     });
 
     mockAuthCookie(token);
     mockUserLookup({
+      ...validUser,
       id: "student-1",
       role: "SISWA",
-      status: "AKTIF",
     });
 
     await expect(requireLibrarian()).resolves.toEqual({
@@ -325,6 +351,7 @@ describe("requireLibrarian", () => {
   ])("returns $status for unavailable librarian ($label)", async ({ user, status }) => {
     const token = await createAuthToken({
       userId: validUser.id,
+      schoolId: validUser.schoolId,
       role: validUser.role,
     });
 
@@ -340,6 +367,7 @@ describe("requireLibrarian", () => {
   it("returns 401 when Prisma lookup fails", async () => {
     const token = await createAuthToken({
       userId: validUser.id,
+      schoolId: validUser.schoolId,
       role: validUser.role,
     });
 

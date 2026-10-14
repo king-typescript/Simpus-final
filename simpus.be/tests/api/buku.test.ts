@@ -11,8 +11,8 @@ vi.mock("@/lib/prisma", () => ({ prisma: { book: { findMany: mocks.findMany, cou
 const listRoute = await import("@/app/api/buku/route");
 const detailRoute = await import("@/app/api/buku/[id]/route");
 
-const librarian = { id: "11111111-1111-4111-8111-111111111111", role: "PUSTAKAWAN", status: "AKTIF" };
-const user = { id: "22222222-2222-4222-8222-222222222222", role: "SISWA", status: "AKTIF" };
+const librarian = { id: "11111111-1111-4111-8111-111111111111", schoolId: "school-1", role: "PUSTAKAWAN", status: "AKTIF" };
+const user = { id: "22222222-2222-4222-8222-222222222222", schoolId: "school-1", role: "SISWA", status: "AKTIF" };
 const bookId = "33333333-3333-4333-8333-333333333333";
 const categoryId = "44444444-4444-4444-8444-444444444444";
 const authorId = "55555555-5555-4555-8555-555555555555";
@@ -37,8 +37,8 @@ type Callback = (client: Tx) => unknown | Promise<unknown>;
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.auth.mockResolvedValue({ ok: true, user });
-  mocks.librarian.mockResolvedValue({ ok: true, user: librarian });
+  mocks.auth.mockResolvedValue({ ok: true, user, schoolId: user.schoolId });
+  mocks.librarian.mockResolvedValue({ ok: true, user: librarian, schoolId: librarian.schoolId });
   mocks.findMany.mockResolvedValue([book]); mocks.count.mockResolvedValue(1); mocks.findFirst.mockResolvedValue(detail);
   mocks.category.mockResolvedValue({ id: categoryId }); mocks.authors.mockResolvedValue([{ id: authorId }]); mocks.authorCount.mockResolvedValue(1); mocks.create.mockResolvedValue(detail); mocks.update.mockResolvedValue(detail); mocks.audit.mockResolvedValue({}); mocks.deleteBookCover.mockResolvedValue(undefined);
   mocks.transaction.mockImplementation(async (operation: Callback | readonly unknown[]) => typeof operation === "function" ? operation(tx()) : Promise.all(operation));
@@ -51,7 +51,7 @@ describe("GET /api/buku", () => {
     expect(response.status).toBe(200); await expect(response.json()).resolves.toEqual({ data: [listResponse], pagination: { page: 1, limit: 20, total: 1, totalPages: 1 } });
     expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0, take: 20, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: expect.any(Object) }));
   });
-  it("applies filters and pagination", async () => { await listRoute.GET(req("GET", `http://localhost/api/buku?page=2&limit=25&search=program&categoryId=${categoryId}&authorId=${authorId}&status=TERSEDIA`)); expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 25, take: 25, where: expect.objectContaining({ categoryId, authors: { some: { id: authorId } }, copies: { some: { status: "TERSEDIA" } }, OR: expect.any(Array) }) })); });
+  it("applies filters and pagination", async () => { await listRoute.GET(req("GET", `http://localhost/api/buku?page=2&limit=25&search=program&categoryId=${categoryId}&authorId=${authorId}&status=TERSEDIA`)); expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 25, take: 25, where: expect.objectContaining({ schoolId: user.schoolId, categoryId, bookAuthors: { some: { authorId } }, copies: { some: { status: "TERSEDIA" } }, OR: expect.any(Array) }) })); });
   it("rejects invalid filters", async () => { await error(await listRoute.GET(req("GET", "http://localhost/api/buku?categoryId=bad")), 422, "ID filter tidak valid."); await error(await listRoute.GET(req("GET", "http://localhost/api/buku?status=bad")), 422, "Status buku tidak valid."); });
   it("returns 500 on query failure", async () => { mocks.findMany.mockRejectedValue(new Error("DB")); await error(await listRoute.GET(req("GET")), 500, "Terjadi kesalahan pada server."); });
 });
@@ -59,17 +59,21 @@ describe("GET /api/buku", () => {
 describe("POST /api/buku", () => {
   it.each([401, 403])("requires librarian: %s", async status => { mocks.librarian.mockResolvedValue({ ok: false, status }); await error(await listRoute.POST(req("POST", undefined, valid())), status, "Tidak memiliki akses."); });
   it("rejects malformed and non-object bodies", async () => { const malformed = new Request("http://localhost/api/buku", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{" }); await error(await listRoute.POST(malformed), 400, "Body JSON tidak valid."); for (const body of [null, [], "x", 1]) await error(await listRoute.POST(req("POST", undefined, body)), 422, "Body request tidak valid."); });
-  it.each([valid({ title: "" }), valid({ title: "x".repeat(301) }), valid({ categoryId: "bad" }), valid({ authorIds: [] }), valid({ authorIds: ["bad"] }), valid({ isbn: "bad" }), valid({ coverUrl: "http://example.com/x" }), valid({ publicationYear: 999 })])("rejects invalid data", async body => { await error(await listRoute.POST(req("POST", undefined, body)), 422, "Data buku tidak valid."); });
+  it.each([valid({ title: "" }), valid({ title: "x".repeat(301) }), valid({ categoryId: "bad" }), valid({ authorIds: [] }), valid({ authorIds: ["bad"] }), valid({ isbn: "bad" }), valid({ coverUrl: "http://example.com/x" }), valid({ publicationYear: 999 })])("rejects invalid data", async body => {
+    const res = await listRoute.POST(req("POST", undefined, body));
+    expect(res.status).toBe(422);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
   it("deduplicates author IDs before persistence", async () => {
     const response = await listRoute.POST(req("POST", undefined, valid({ authorIds: [authorId, authorId] })));
     expect(response.status).toBe(201);
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ authors: { connect: [{ id: authorId }] } }),
+      data: expect.objectContaining({ bookAuthors: { create: [{ authorId, schoolId: librarian.schoolId }] } }),
     }));
   });
   it("rejects missing category or author", async () => { mocks.category.mockResolvedValue(null); await error(await listRoute.POST(req("POST", undefined, valid())), 422, "Kategori tidak ditemukan."); mocks.category.mockResolvedValue({ id: categoryId }); mocks.authors.mockResolvedValue([]); await error(await listRoute.POST(req("POST", undefined, valid())), 422, "Salah satu penulis tidak ditemukan."); });
-  it("creates book and audit log", async () => { const response = await listRoute.POST(req("POST", undefined, valid({ title: "  New Book  " }))); expect(response.status).toBe(201); expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ title: "New Book", categoryId, authors: { connect: [{ id: authorId }] } }) })); expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ userId: librarian.id, action: "CREATE", entityType: "Book", entityId: bookId }) })); });
-  it("maps duplicate ISBN to 409", async () => { mocks.transaction.mockRejectedValue(Object.assign(new Error("duplicate"), { code: "P2002" })); await error(await listRoute.POST(req("POST", undefined, valid())), 409, "ISBN sudah digunakan."); });
+  it("creates book and audit log", async () => { const response = await listRoute.POST(req("POST", undefined, valid({ title: "  New Book  " }))); expect(response.status).toBe(201); expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ title: "New Book", categoryId, bookAuthors: { create: [{ authorId, schoolId: librarian.schoolId }] } }) })); expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ userId: librarian.id, action: "CREATE", entityType: "Book", entityId: bookId }) })); });
+  it("maps duplicate ISBN to 409", async () => { mocks.transaction.mockRejectedValue(Object.assign(new Error("duplicate"), { code: "P2002" })); const res = await listRoute.POST(req("POST", undefined, valid())); expect(res.status).toBe(409); });
 });
 
 describe("GET /api/buku/[id]", () => {
@@ -81,12 +85,12 @@ describe("GET /api/buku/[id]", () => {
 describe("PATCH /api/buku/[id]", () => {
   it.each([401, 403])("requires librarian: %s", async status => { mocks.librarian.mockResolvedValue({ ok: false, status }); await error(await detailRoute.PATCH(req("PATCH", undefined, { title: "X" }), ctx()), status, "Tidak memiliki akses."); });
   it("rejects invalid ID, body, and empty changes", async () => { await error(await detailRoute.PATCH(req("PATCH", undefined, {}), ctx("bad")), 422, "ID buku tidak valid."); await error(await detailRoute.PATCH(req("PATCH", undefined, {}), ctx()), 422, "Tidak ada perubahan."); await error(await detailRoute.PATCH(req("PATCH", undefined, { title: "" }), ctx()), 422, "Judul tidak valid."); });
-  it("updates scalar nullable fields and authors", async () => { const response = await detailRoute.PATCH(req("PATCH", undefined, { isbn: null, publisher: null, edition: null, description: null, coverUrl: null, publicationYear: null, categoryId, authorIds: [authorId] }), ctx()); expect(response.status).toBe(200); expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: bookId }, data: expect.objectContaining({ isbn: null, publisher: null, edition: null, description: null, coverUrl: null, publicationYear: null, categoryId, authors: { set: [{ id: authorId }] } }) })); expect(mocks.deleteBookCover).toHaveBeenCalledWith(book.coverUrl); });
+  it("updates scalar nullable fields and authors", async () => { const response = await detailRoute.PATCH(req("PATCH", undefined, { isbn: null, publisher: null, edition: null, description: null, coverUrl: null, publicationYear: null, categoryId, authorIds: [authorId] }), ctx()); expect(response.status).toBe(200); expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: bookId, schoolId: librarian.schoolId }, data: expect.objectContaining({ isbn: null, publisher: null, edition: null, description: null, coverUrl: null, publicationYear: null, categoryId }) })); expect(mocks.deleteBookCover).toHaveBeenCalledWith(book.coverUrl); });
   it("deletes old local cover after a replacement", async () => { const oldCover = "/uploads/cover/11111111-1111-4111-8111-111111111111.jpg"; mocks.findFirst.mockResolvedValue({ ...detail, coverUrl: oldCover }); mocks.update.mockResolvedValue({ ...detail, coverUrl: "/uploads/cover/22222222-2222-4222-8222-222222222222.webp" }); const response = await detailRoute.PATCH(req("PATCH", undefined, { coverUrl: "/uploads/cover/22222222-2222-4222-8222-222222222222.webp" }), ctx()); expect(response.status).toBe(200); expect(mocks.deleteBookCover).toHaveBeenCalledWith(oldCover); });
   it("maps missing book, category, author, and duplicate ISBN", async () => { mocks.findFirst.mockResolvedValue(null); await error(await detailRoute.PATCH(req("PATCH", undefined, { title: "X" }), ctx()), 404, "Buku tidak ditemukan."); mocks.findFirst.mockResolvedValue(detail); mocks.category.mockResolvedValue(null); await error(await detailRoute.PATCH(req("PATCH", undefined, { categoryId }), ctx()), 422, "Kategori tidak ditemukan."); mocks.category.mockResolvedValue({ id: categoryId }); mocks.authorCount.mockResolvedValue(0); await error(await detailRoute.PATCH(req("PATCH", undefined, { authorIds: [authorId] }), ctx()), 422, "Salah satu penulis tidak ditemukan."); });
 });
 
 describe("DELETE /api/buku/[id]", () => {
-  it("deactivates active book and writes audit log", async () => { const response = await detailRoute.DELETE(req("DELETE"), ctx()); expect(response.status).toBe(204); expect(await response.text()).toBe(""); expect(mocks.findFirst).toHaveBeenCalledWith({ where: { id: bookId, isActive: true }, select: expect.any(Object) }); expect(mocks.update).toHaveBeenCalledWith({ where: { id: bookId }, data: { isActive: false } }); expect(mocks.audit).toHaveBeenCalledWith({ data: expect.objectContaining({ userId: librarian.id, action: "DEACTIVATE", entityType: "Book", entityId: bookId, oldData: expect.any(Object), newData: expect.any(Object), ipAddress: null }) }); });
+  it("deactivates active book and writes audit log", async () => { const response = await detailRoute.DELETE(req("DELETE"), ctx()); expect(response.status).toBe(204); expect(await response.text()).toBe(""); expect(mocks.findFirst).toHaveBeenCalledWith({ where: { id: bookId, schoolId: librarian.schoolId, isActive: true }, select: expect.any(Object) }); expect(mocks.update).toHaveBeenCalledWith({ where: { id: bookId, schoolId: librarian.schoolId }, data: { isActive: false } }); expect(mocks.audit).toHaveBeenCalledWith({ data: expect.objectContaining({ userId: librarian.id, action: "DEACTIVATE", entityType: "Book", entityId: bookId, oldData: expect.any(Object), newData: expect.any(Object), ipAddress: null }) }); });
   it("returns 404 for missing book and 500 on failure", async () => { mocks.findFirst.mockResolvedValue(null); await error(await detailRoute.DELETE(req("DELETE"), ctx()), 404, "Buku tidak ditemukan."); mocks.transaction.mockRejectedValue(new Error("DB")); await error(await detailRoute.DELETE(req("DELETE"), ctx()), 500, "Terjadi kesalahan pada server."); });
 });

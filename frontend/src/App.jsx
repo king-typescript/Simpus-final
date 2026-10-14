@@ -13,10 +13,15 @@ import { motion } from 'framer-motion'
 import { AuthProvider } from './lib/auth.jsx'
 import { NotificationProvider } from './context/NotificationContext.jsx'
 import ProtectedRoute from './components/common/ProtectedRoute.jsx'
+import { ErrorBoundary } from './components/common/ErrorBoundary.jsx'
 
 // --- Halaman Publik (Landing Page & Otentikasi) ---
 const Landing = lazy(() => import('./pages/Landing.jsx'))
 const Login = lazy(() => import('./pages/Login.jsx'))
+
+// --- Modul Super Admin ---
+const SuperAdminDashboard = lazy(() => import('./pages/SuperAdminDashboard.jsx'))
+const SuperAdminLogin = lazy(() => import('./pages/SuperAdminLogin.jsx'))
 
 // --- Modul Admin Perpustakaan ---
 const AdminLayout = lazy(() => import('./admin/components/AdminLayout.jsx'))
@@ -70,9 +75,10 @@ export default function App() {
   const location = useLocation()
 
   return (
-    <AuthProvider>
-      <NotificationProvider>
-        <Suspense fallback={<Fallback />}>
+    <ErrorBoundary>
+      <AuthProvider>
+        <NotificationProvider>
+          <Suspense fallback={<Fallback />}>
           {/* Tidak menggunakan key={location.pathname} pada Routes agar tidak meremount seluruh tree */}
           <Routes location={location}>
             {/* ===================================================
@@ -80,6 +86,8 @@ export default function App() {
                =================================================== */}
             <Route path="/" element={<PageTransition><Landing /></PageTransition>} />
             <Route path="/login" element={<PageTransition><Login /></PageTransition>} />
+            <Route path="/superadmin/login" element={<PageTransition><SuperAdminLogin /></PageTransition>} />
+            <Route path="/superadmin" element={<ProtectedRoute allowedRoles={['SUPERADMIN']}><SuperAdminDashboard /></ProtectedRoute>} />
 
             {/* ===================================================
                 2. Rute Admin Perpustakaan
@@ -126,5 +134,6 @@ export default function App() {
         </Suspense>
       </NotificationProvider>
     </AuthProvider>
+  </ErrorBoundary>
   )
 }

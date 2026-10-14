@@ -15,11 +15,17 @@ export default function ProtectedRoute({ children, allowedRoles }) {
   }
 
   if (!user) {
+    if (allowedRoles?.includes('SUPERADMIN')) {
+      return <Navigate to="/superadmin/login" state={{ from: location }} replace />;
+    }
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     // Redirect to respective dashboard if wrong role
+    if (user.role === 'SUPERADMIN') {
+      return <Navigate to="/superadmin" replace />;
+    }
     const redirectPath = user.role === 'PUSTAKAWAN' ? '/admin' : '/siswa';
     return <Navigate to={redirectPath} replace />;
   }

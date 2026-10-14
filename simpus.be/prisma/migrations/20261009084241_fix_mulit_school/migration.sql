@@ -105,13 +105,13 @@ DROP INDEX "loans_schoolId_idx";
 DROP INDEX "users_role_idx";
 
 -- AlterTable
-ALTER TABLE "book_copies" ADD COLUMN     "isActive" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "book_copies" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT true;
 
 -- CreateIndex
 CREATE INDEX "book_copies_schoolId_status_idx" ON "book_copies"("schoolId", "status");
 
 -- CreateIndex
-CREATE INDEX "book_copies_isActive_idx" ON "book_copies"("isActive");
+CREATE INDEX IF NOT EXISTS "book_copies_isActive_idx" ON "book_copies"("isActive");
 
 -- CreateIndex
 CREATE INDEX "books_schoolId_categoryId_idx" ON "books"("schoolId", "categoryId");

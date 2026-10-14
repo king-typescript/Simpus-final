@@ -27,10 +27,8 @@ api.interceptors.response.use(
   }
 )
 
-export function saveAuthToken(token) {
-  if (token) {
-    localStorage.setItem(TOKEN_KEY, token)
-  }
+export function saveAuthToken(_token) {
+  // Enterprise standard: cookie httpOnly handles auth. No token stored in localStorage.
 }
 
 export function clearAuthToken() {

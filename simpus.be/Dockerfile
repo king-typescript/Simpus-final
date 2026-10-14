@@ -38,8 +38,8 @@ ARG BUILD_AUTH_SECRET="build_only_dummy_secret_not_for_production_min32chars"
 RUN DATABASE_URL="$BUILD_DATABASE_URL" AUTH_SECRET="$BUILD_AUTH_SECRET" pnpm prisma generate \
   && DATABASE_URL="$BUILD_DATABASE_URL" AUTH_SECRET="$BUILD_AUTH_SECRET" pnpm build
 
-# Jalankan container menggunakan user non-root 'node' demi standar keamanan CIS/OWASP
-RUN chown -R node:node /app
+# Standar keamanan CIS/OWASP: pastikan direktori runtime cache dan upload dapat ditulisi oleh user node
+RUN mkdir -p /app/.next/cache /app/public/uploads && chown -R node:node /app/.next /app/public
 
 USER node
 

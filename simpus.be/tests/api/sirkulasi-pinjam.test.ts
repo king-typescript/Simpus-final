@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireLibrarian: vi.fn(),
-  findUniqueSetting: vi.fn(),
+  findUniqueSetting: vi.fn(), // now returns setting per schoolId
   findStudent: vi.fn(),
   countLoanItems: vi.fn(),
   findCopies: vi.fn(),

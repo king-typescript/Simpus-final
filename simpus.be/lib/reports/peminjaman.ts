@@ -44,7 +44,7 @@ export type PeminjamanReportItem = {
     id: string;
     nis: string;
     name: string;
-    className: string;
+    className: string | null;
   };
   book: {
     id: string;

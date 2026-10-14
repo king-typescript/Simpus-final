@@ -1,14 +1,13 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, BookOpen, Tablet, ArrowRight } from 'lucide-react'
-import { BookService, CategoryService } from '../services/api.js'
+import { BookService, CategoryService, PublicBookService } from '../services/api.js'
 import BookCard from './BookCard.jsx'
 import { useAuth } from '../lib/auth.jsx'
 
-const FALLBACK_PHYSICAL_BOOKS = []
-
 export default function PopularBooks() {
   const { user } = useAuth()
+  const isGuest = !user
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('')
   const [dbCategories, setDbCategories] = useState([])
@@ -25,11 +24,12 @@ export default function PopularBooks() {
 
   useEffect(() => {
     let mounted = true
-    CategoryService.getAll({ limit: 100 }).then((res) => {
+    const fetchCategories = isGuest ? PublicBookService.getCategories : () => CategoryService.getAll({ limit: 100 })
+    fetchCategories().then((res) => {
       if (mounted && res.data?.data) setDbCategories(res.data.data)
     }).catch(() => {})
     return () => { mounted = false }
-  }, [])
+  }, [isGuest])
 
   useEffect(() => {
     let isMounted = true
@@ -37,23 +37,27 @@ export default function PopularBooks() {
     const fetchBooks = async () => {
       setLoading(true)
       try {
-        const isFiltered = Boolean(query || category)
-        const params = { limit: 20, status: 'TERSEDIA', sort: 'popular' }
-        if (query) params.search = query
-        if (category) params.categoryId = category
-
-        const res = isFiltered
-          ? await BookService.search(params)
-          : await BookService.getPopular()
+        let res
+        if (isGuest) {
+          const params = { limit: 4 }
+          if (query) params.search = query
+          if (category) params.ddc = category
+          res = await PublicBookService.getSample(params)
+        } else {
+          const params = { limit: 20, status: 'TERSEDIA', sort: 'popular' }
+          if (query) params.search = query
+          if (category) params.categoryId = category
+          res = query || category ? await BookService.search(params) : await BookService.getPopular()
+        }
 
         if (isMounted) {
-          const raw = res.data?.data || res.data || []
-          const paginationTotal = res.data?.pagination?.total ?? (Array.isArray(raw) ? raw.length : 0)
+          const raw = res.data?.data || []
+          const paginationTotal = res.data?.pagination?.total ?? raw.length
           setTotalPhysicalCount(paginationTotal)
 
           const mapped = Array.isArray(raw) ? raw.map((b) => ({
             id: b.id,
-            isEbook: Boolean(b.isEbook),
+            isEbook: false,
             title: b.title,
             category: typeof b.category === 'object' ? b.category?.name : b.category,
             categoryId: b.category?.id || b.categoryId || '',
@@ -62,22 +66,19 @@ export default function PopularBooks() {
             year: b.publicationYear || b.year || '-',
             publicationYear: b.publicationYear || null,
             pageCount: b.pageCount || null,
-            isbn: b.isbn || '-',
-            shelf: b.shelf || '-',
-            copies: b.isEbook ? 99 : (b.copyCount ?? b.copies ?? 0),
-            stock: b.isEbook ? 99 : (b.copyCount ?? b.copies ?? 0),
+            isbn: isGuest ? '***' : (b.isbn || '-'),
+            shelf: isGuest ? '-' : (b.shelf || '-'),
+            copies: isGuest ? 'Tersedia' : (b.copyCount ?? b.copies ?? 0),
+            stock: isGuest ? 'Tersedia' : (b.copyCount ?? b.copies ?? 0),
             description: b.description || 'Belum ada deskripsi untuk buku ini.',
             cover: b.coverUrl || b.cover || null,
-            fileUrl: b.fileUrl || null,
-            color: b.isEbook ? '#F3E8FF' : '#E3EEFB',
-            accent: b.isEbook ? '#7E22CE' : '#1D5FAE',
+            fileUrl: null,
+            color: '#E3EEFB',
+            accent: '#1D5FAE',
           })) : []
 
-          const onlyPhysical = mapped.filter((b) => !b.isEbook)
-          const onlyEbooks = mapped.filter((b) => b.isEbook)
-
-          setPhysicalBooks(onlyPhysical)
-          setEBooks(onlyEbooks)
+          setPhysicalBooks(mapped)
+          setEBooks([])
         }
       } catch (err) {
         if (isMounted) {
@@ -91,7 +92,8 @@ export default function PopularBooks() {
     }
 
     fetchBooks()
-  }, [query, category])
+  }, [query, category, isGuest])
+
 
   const filteredPhysical = useMemo(() => physicalBooks, [physicalBooks])
 
@@ -141,12 +143,12 @@ export default function PopularBooks() {
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="min-h-[44px] w-full shrink-0 touch-manipulation rounded-xl bg-slate-50 px-3 py-2 text-[16px] font-semibold text-navy-900 focus:outline-none sm:w-auto sm:bg-transparent sm:text-sm"
+              className="w-full sm:w-56 appearance-none rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs sm:text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20"
             >
               <option value="">Semua Kategori</option>
               {dbCategories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.name}
+                <option key={cat.id} value={isGuest ? cat.ddcCode : cat.id}>
+                  {cat.name} {cat.ddcCode ? `(${cat.ddcCode})` : ''}
                 </option>
               ))}
             </select>

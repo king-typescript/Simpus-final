@@ -33,14 +33,16 @@ export async function GET(request: Request) {
   if (!searchResult.ok) return jsonError(searchResult.error, 422);
   const { page, limit } = pagination.value;
   const search = searchResult.value;
+  const classId = url.searchParams.get("classId")?.trim() ?? "";
   const className = url.searchParams.get("className")?.trim() ?? "";
   const status = url.searchParams.get("status")?.trim() ?? "";
   const statusResult = status ? parseEnum(status, ["AKTIF", "NONAKTIF"] as const, "Status") : null;
   if (statusResult && !statusResult.ok) return jsonError(statusResult.error, 422);
 
   const where = {
-    schoolId: auth.schoolId,
+    ...(auth.schoolId ? { schoolId: auth.schoolId } : {}),
     ...(statusResult?.ok ? { isActive: statusResult.value === "AKTIF" } : {}),
+    ...(classId ? { classId } : {}),
     ...(className ? { className: { contains: className, mode: "insensitive" as const } } : {}),
     ...(search
       ? {
@@ -57,7 +59,7 @@ export async function GET(request: Request) {
   try {
     const [data, total] = await prisma.$transaction([
       prisma.student.findMany({
-        where: { ...where, schoolId: auth.schoolId },
+        where,
         select: {
           id: true,
           nis: true,
@@ -75,7 +77,7 @@ export async function GET(request: Request) {
         skip: (page - 1) * limit,
         take: limit,
       }),
-      prisma.student.count({ where: { ...where, schoolId: auth.schoolId } }),
+      prisma.student.count({ where }),
     ]);
 
     return NextResponse.json(

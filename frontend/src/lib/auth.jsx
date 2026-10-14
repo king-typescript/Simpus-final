@@ -17,12 +17,10 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let mounted = true
     const token = localStorage.getItem('simpus_token')
+    const cachedUser = localStorage.getItem('simpus_user')
 
-    if (!token && !user) {
-      setLoading(false)
-      return
-    }
-
+    // Enterprise standard: Cookie httpOnly is primary auth.
+    // Call /api/auth/me directly to verify session
     AuthService.me()
       .then((res) => {
         if (!mounted) return
@@ -59,15 +57,19 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (credentials) => {
     const res = await AuthService.login(credentials)
     const userPayload = res.data?.user ?? null
-    const token = res.data?.token ?? null
-    if (token) {
-      saveAuthToken(token)
-    }
     if (userPayload) {
       setUser(userPayload)
       localStorage.setItem('simpus_user', JSON.stringify(userPayload))
     }
     return res.data
+  }, [])
+
+  const loginSuperAdmin = useCallback((userPayload) => {
+    if (userPayload) {
+      const formatted = { ...userPayload, role: 'SUPERADMIN' }
+      setUser(formatted)
+      localStorage.setItem('simpus_user', JSON.stringify(formatted))
+    }
   }, [])
 
   const logout = useCallback(async () => {
@@ -82,7 +84,10 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const value = useMemo(() => ({ user, loading, login, logout }), [user, loading, login, logout])
+  const value = useMemo(
+    () => ({ user, loading, login, loginSuperAdmin, logout }),
+    [user, loading, login, loginSuperAdmin, logout]
+  )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

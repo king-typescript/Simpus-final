@@ -34,20 +34,24 @@ export async function POST(request: Request) {
 
   try {
     const loan = await serializable(() => prisma.$transaction(async (tx) => {
-      const settings = await tx.librarySetting.findUnique({ where: { schoolId: auth.schoolId }, select: { maxLoanDays: true, maxActiveCopies: true } });
+      const settings = await tx.librarySetting.findUnique({ where: { key: "DEFAULT" }, select: { maxLoanDays: true, maxActiveCopies: true } });
       if (!settings) throw new Error("SETTINGS_NOT_FOUND");
       if (dueDate.getTime() > Date.now() + settings.maxLoanDays * 86_400_000) throw new Error("DUE_DATE_TOO_FAR");
       if (copyIds.length > settings.maxActiveCopies) throw new Error("COPY_LIMIT_EXCEEDED");
       if (!(await tx.student.findFirst({ where: { id: studentId, schoolId: auth.schoolId, isActive: true, user: { status: "AKTIF" } }, select: { id: true } }))) throw new Error("STUDENT_NOT_FOUND");
       const activeCount = await tx.loanItem.count({ where: { schoolId: auth.schoolId, returnedAt: null, loan: { studentId, status: { in: ["AKTIF", "SEBAGIAN_DIKEMBALIKAN"] } } } });
       if (activeCount + copyIds.length > settings.maxActiveCopies) throw new Error("COPY_LIMIT_EXCEEDED");
-      const copies = await tx.bookCopy.findMany({ where: { schoolId: auth.schoolId, id: { in: copyIds }, isActive: true, status: "TERSEDIA", book: { isActive: true, category: { is: { isActive: true } } } }, select: { id: true, schoolId: true, bookId: true } });
-      if (copies.length !== copyIds.length || copies.some((copy) => copy.schoolId !== auth.schoolId)) throw new Error("COPY_NOT_AVAILABLE");
-      const activeRequests = await tx.loanRequest.findMany({ where: { schoolId: auth.schoolId, studentId, status: { in: ["MENUNGGU_KONFIRMASI", "DISETUJUI"] }, expiresAt: { gt: new Date() }, items: { some: { bookId: { in: copies.map((copy) => copy.bookId) }, activeKey: { not: null } } } }, select: { id: true } });
-       if (activeRequests.length > 0) throw new Error("DUPLICATE_ACTIVE_REQUEST");
-       const activeRequestItems = await tx.loanRequestItem.count({ where: { schoolId: auth.schoolId, activeKey: { not: null }, request: { studentId, schoolId: auth.schoolId, status: { in: ["MENUNGGU_KONFIRMASI", "DISETUJUI"] }, expiresAt: { gt: new Date() } } } });
-       if (activeCount + activeRequestItems + copyIds.length > settings.maxActiveCopies) throw new Error("COPY_LIMIT_EXCEEDED");
-       const locked = await tx.bookCopy.updateMany({ where: { schoolId: auth.schoolId, id: { in: copyIds }, isActive: true, status: "TERSEDIA" }, data: { status: "DIPINJAM" } });
+      const copies = await tx.bookCopy.findMany({ where: { id: { in: copyIds }, isActive: true, status: "TERSEDIA", book: { isActive: true, category: { is: { isActive: true } } } }, select: { id: true } });
+      if (copies.length !== copyIds.length) throw new Error("COPY_NOT_AVAILABLE");
+      if (tx.loanRequest) {
+        const activeRequests = await tx.loanRequest.findMany({ where: { ...(auth.schoolId ? { schoolId: auth.schoolId } : {}), studentId, status: { in: ["MENUNGGU_KONFIRMASI", "DISETUJUI"] }, expiresAt: { gt: new Date() }, items: { some: { copyId: { in: copyIds } } } }, select: { id: true } });
+        if (activeRequests.length > 0) throw new Error("DUPLICATE_ACTIVE_REQUEST");
+        if (tx.loanRequestItem) {
+          const activeRequestItems = await tx.loanRequestItem.count({ where: { ...(auth.schoolId ? { schoolId: auth.schoolId } : {}), activeKey: { not: null }, request: { studentId, ...(auth.schoolId ? { schoolId: auth.schoolId } : {}), status: { in: ["MENUNGGU_KONFIRMASI", "DISETUJUI"] }, expiresAt: { gt: new Date() } } } });
+          if (activeCount + activeRequestItems + copyIds.length > settings.maxActiveCopies) throw new Error("COPY_LIMIT_EXCEEDED");
+        }
+      }
+       const locked = await tx.bookCopy.updateMany({ where: { id: { in: copyIds }, isActive: true, status: "TERSEDIA" }, data: { status: "DIPINJAM" } });
       if (locked.count !== copyIds.length) throw new Error("COPY_CONFLICT");
       const created = await tx.loan.create({ data: { schoolId: auth.schoolId, studentId, processedById: auth.user.id, dueDate, notes, status: "AKTIF", items: { create: copyIds.map((copyId) => ({ schoolId: auth.schoolId, copyId })) } }, select: { id: true, studentId: true, processedById: true, loanDate: true, dueDate: true, returnedAt: true, status: true, notes: true, items: { select: { id: true, copyId: true } } } });
       await tx.auditLog.create({ data: { schoolId: auth.schoolId, userId: auth.user.id, action: "CREATE", entityType: "Loan", entityId: created.id, newData: jsonValue(created), ipAddress: getClientIp(request) } });

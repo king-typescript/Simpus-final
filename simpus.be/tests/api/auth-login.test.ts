@@ -260,6 +260,7 @@ describe("POST /api/auth/login", () => {
         role: "PUSTAKAWAN",
       },
       school,
+      token: "signed-auth-token",
     });
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(mocks.verify).toHaveBeenCalledWith("hashed-password", "correct-password");

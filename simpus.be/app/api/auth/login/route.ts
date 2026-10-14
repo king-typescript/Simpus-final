@@ -46,7 +46,8 @@ export async function POST(request: Request) {
     return errorResponse(INVALID_CREDENTIALS, 401);
   }
 
-  const ip = getClientIp(request);
+  const rawIp = getClientIp(request);
+  const ip = rawIp ?? "127.0.0.1";
   const rateLimitIdentity = `${schoolCode}:${username.toLowerCase()}`;
 
   if (await isRateLimited([rateLimitIdentity, ip])) {

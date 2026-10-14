@@ -56,7 +56,7 @@ export async function GET(request: Request) {
   const now = new Date();
   const today = startOfUtcDay(now);
   const where = {
-    schoolId: auth.schoolId,
+    ...(auth.schoolId ? { schoolId: auth.schoolId } : {}),
     status: { in: [LoanStatus.AKTIF, LoanStatus.SEBAGIAN_DIKEMBALIKAN] },
     ...(studentId ? { studentId } : {}),
     ...(overdue === "true" ? { dueDate: { lt: today } } : {}),
@@ -64,9 +64,10 @@ export async function GET(request: Request) {
   };
 
   try {
+    const settingWhere = auth.schoolId ? { schoolId: auth.schoolId } : ({ key: "DEFAULT" } as unknown as { schoolId: string });
     const [settings, loans, total] = await prisma.$transaction([
       prisma.librarySetting.findUnique({
-        where: { schoolId: auth.schoolId },
+        where: settingWhere,
         select: { fineRatePerDay: true },
       }),
       prisma.loan.findMany({

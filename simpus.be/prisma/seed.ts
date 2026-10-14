@@ -166,18 +166,16 @@ async function main() {
         publisher: "Gramedia Pustaka Utama",
         publicationYear: 2014,
         categoryId: category.id,
-        authors: {
-          connect: { id: author.id },
-        },
       },
     });
 
-    await tx.book.update({
-      where: { id: book.id },
-      data: {
-        authors: {
-          connect: { id: author.id },
-        },
+    await tx.bookAuthor.upsert({
+      where: { bookId_authorId: { bookId: book.id, authorId: author.id } },
+      update: {},
+      create: {
+        schoolId: school.id,
+        bookId: book.id,
+        authorId: author.id,
       },
     });
 
