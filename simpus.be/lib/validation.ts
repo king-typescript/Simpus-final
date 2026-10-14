@@ -474,9 +474,6 @@ export function parseBookCoverUrl(
   const normalized = value.trim();
   if (
     normalized.startsWith("/uploads/") ||
-    normalized.startsWith("http://") ||
-    normalized.startsWith("https://") ||
-    normalized.startsWith("data:") ||
     /^schools\/[0-9a-f-]{36}\/book-covers\/[0-9a-f-]{36}\.(?:jpg|png|webp|gif|bmp|avif)$/i.test(normalized) ||
     /^book-covers\/[0-9a-f-]{36}\.(?:jpg|png|webp|gif|bmp|avif)$/i.test(normalized)
   ) {

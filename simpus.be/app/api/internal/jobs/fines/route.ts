@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { Prisma } from "@/app/generated/prisma/client";
 import { noStoreHeaders } from "@/lib/auth";
 import { calculateDaysLate } from "@/lib/fine";
 import { prisma } from "@/lib/prisma";
@@ -42,11 +41,17 @@ export async function POST(request: Request) {
   const now = new Date();
 
   try {
+    const setting = await prisma.librarySetting.findUnique({
+      where: { key: "DEFAULT" },
+      select: { fineRatePerDay: true },
+    });
+    if (!setting) return errorResponse("Pengaturan perpustakaan belum tersedia.", 500);
+
     const candidates = await prisma.loanItem.findMany({
       where: { returnedAt: null, loan: { status: { in: ["AKTIF", "SEBAGIAN_DIKEMBALIKAN"] }, dueDate: { lt: now } } },
       orderBy: [{ loan: { dueDate: "asc" } }, { id: "asc" }],
       take: MAX_BATCH_SIZE,
-      select: { id: true, schoolId: true },
+      select: { id: true },
     });
 
     let created = 0;
@@ -59,6 +64,7 @@ export async function POST(request: Request) {
           where: { id: candidate.id },
           select: {
             id: true,
+            schoolId: true,
             returnedAt: true,
             loan: { select: { dueDate: true, status: true } },
             fine: { select: { id: true, status: true, daysLate: true, ratePerDay: true, amount: true } },
@@ -66,18 +72,33 @@ export async function POST(request: Request) {
         });
 
         if (!item || item.returnedAt || !["AKTIF", "SEBAGIAN_DIKEMBALIKAN"].includes(item.loan.status)) return "SKIPPED" as const;
-        const settings = await tx.librarySetting.findUnique({ where: { schoolId: candidate.schoolId }, select: { fineRatePerDay: true } });
-        if (!settings) return "SKIPPED" as const;
 
         const daysLate = calculateDaysLate(item.loan.dueDate, now);
         if (daysLate <= 0 || (item.fine && item.fine.status !== "BELUM_DIBAYAR")) return "SKIPPED" as const;
 
         if (!item.fine) {
           const fine = await tx.fine.create({
-            data: { schoolId: candidate.schoolId, loanItemId: item.id, type: "TERLAMBAT", daysLate, ratePerDay: settings.fineRatePerDay, amount: settings.fineRatePerDay.mul(daysLate), status: "BELUM_DIBAYAR", note: `Denda otomatis keterlambatan ${daysLate} hari.` },
+            data: {
+              ...(item.schoolId ? { schoolId: item.schoolId } : {}),
+              loanItemId: item.id,
+              type: "TERLAMBAT",
+              daysLate,
+              ratePerDay: setting.fineRatePerDay,
+              amount: setting.fineRatePerDay.mul(daysLate),
+              status: "BELUM_DIBAYAR",
+              note: `Denda otomatis keterlambatan ${daysLate} hari.`,
+            },
             select: { id: true, daysLate: true, ratePerDay: true, amount: true, status: true },
           });
-          await tx.auditLog.create({ data: { schoolId: candidate.schoolId, action: "CREATE", entityType: "Fine", entityId: fine.id, newData: jsonValue(fine) } });
+          await tx.auditLog.create({
+            data: {
+              ...(item.schoolId ? { schoolId: item.schoolId } : {}),
+              action: "CREATE",
+              entityType: "Fine",
+              entityId: fine.id,
+              newData: jsonValue(fine),
+            },
+          });
           return "CREATED" as const;
         }
 
@@ -89,9 +110,18 @@ export async function POST(request: Request) {
           data: { daysLate, amount, note: `Denda otomatis keterlambatan ${daysLate} hari.` },
           select: { id: true, daysLate: true, ratePerDay: true, amount: true, status: true },
         });
-        await tx.auditLog.create({ data: { schoolId: candidate.schoolId, action: "UPDATE", entityType: "Fine", entityId: fine.id, oldData: jsonValue(item.fine), newData: jsonValue(fine) } });
+        await tx.auditLog.create({
+          data: {
+            ...(item.schoolId ? { schoolId: item.schoolId } : {}),
+            action: "UPDATE",
+            entityType: "Fine",
+            entityId: fine.id,
+            oldData: jsonValue(item.fine),
+            newData: jsonValue(fine),
+          },
+        });
         return "UPDATED" as const;
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
+      }, { isolationLevel: "Serializable" }));
 
       if (result === "CREATED") created += 1;
       else if (result === "UPDATED") updated += 1;

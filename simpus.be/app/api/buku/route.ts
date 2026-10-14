@@ -112,46 +112,46 @@ export async function POST(request: Request) {
   if (!isRecord(body) || !hasOnlyFields(body, ALLOWED_POST_FIELDS)) return errorResponse("Body request tidak valid.", 422);
 
   const titleResult = parseRequiredString(body.title, { field: "Judul", maxLength: 300 });
-  if (!titleResult.ok) return errorResponse(titleResult.error, 422);
+  if (!titleResult.ok) return errorResponse("Data buku tidak valid.", 422);
 
   const rawIsbn = typeof body.isbn === "string" ? normalizeText(body.isbn) || null : body.isbn === null ? null : undefined;
   if (rawIsbn !== undefined && rawIsbn !== null && (rawIsbn.length > 50 || !/^[0-9Xx-]{3,25}$/.test(rawIsbn))) {
-    return errorResponse("Format ISBN tidak valid (harus 3-25 karakter angka, tanda hubung -, atau X).", 422);
+    return errorResponse("Data buku tidak valid.", 422);
   }
   const isbn = rawIsbn === undefined ? null : rawIsbn;
 
   const publisherResult = parseOptionalString(body.publisher, { field: "Penerbit", maxLength: 200 });
-  if (!publisherResult.ok) return errorResponse(publisherResult.error, 422);
+  if (!publisherResult.ok) return errorResponse("Data buku tidak valid.", 422);
 
   const editionResult = parseOptionalString(body.edition, { field: "Edisi", maxLength: 100 });
-  if (!editionResult.ok) return errorResponse(editionResult.error, 422);
+  if (!editionResult.ok) return errorResponse("Data buku tidak valid.", 422);
 
   const descriptionResult = parseOptionalString(body.description, { field: "Deskripsi", maxLength: 5000 });
-  if (!descriptionResult.ok) return errorResponse(descriptionResult.error, 422);
+  if (!descriptionResult.ok) return errorResponse("Data buku tidak valid.", 422);
 
   const coverResult = parseBookCoverUrl(body.coverUrl, "URL sampul");
-  if (!coverResult.ok) return errorResponse(coverResult.error, 422);
+  if (!coverResult.ok) return errorResponse("Data buku tidak valid.", 422);
 
   const publicationYear = body.publicationYear === undefined || body.publicationYear === null ? null : Number(body.publicationYear);
   const validYear = publicationYear === null || (Number.isSafeInteger(publicationYear) && publicationYear >= 1000 && publicationYear <= new Date().getFullYear() + 1);
   if (!validYear) {
-    return errorResponse(`Tahun terbit harus berupa angka antara 1000 dan ${new Date().getFullYear() + 1}.`, 422);
+    return errorResponse("Data buku tidak valid.", 422);
   }
 
   const pageCount = body.pageCount === undefined || body.pageCount === null ? null : Number(body.pageCount);
   const validPage = pageCount === null || (Number.isSafeInteger(pageCount) && pageCount >= 1 && pageCount <= 50000);
   if (!validPage) {
-    return errorResponse("Jumlah halaman harus berupa angka antara 1 dan 50.000.", 422);
+    return errorResponse("Data buku tidak valid.", 422);
   }
 
   const rawAuthorIds = Array.isArray(body.authorIds) ? body.authorIds : undefined;
   if (rawAuthorIds && (!rawAuthorIds.length || rawAuthorIds.length > 20 || !rawAuthorIds.every(isUuid))) {
-    return errorResponse("Daftar penulis tidak valid.", 422);
+    return errorResponse("Data buku tidak valid.", 422);
   }
 
   const rawCategoryId = typeof body.categoryId === "string" && body.categoryId.trim() ? body.categoryId.trim() : undefined;
   if (rawCategoryId && !isUuid(rawCategoryId)) {
-    return errorResponse("ID kategori tidak valid.", 422);
+    return errorResponse("Data buku tidak valid.", 422);
   }
 
   const title = titleResult.value;
@@ -261,17 +261,14 @@ export async function POST(request: Request) {
           description,
           coverUrl,
           categoryId: resolvedCategoryId,
+          bookAuthors: {
+            create: finalAuthorIds.map((authorId) => ({
+              authorId,
+              schoolId: auth.schoolId,
+            })),
+          },
         },
         select: { id: true },
-      });
-
-      // Link Authors explicitly to avoid nested composite relation issue
-      await tx.bookAuthor.createMany({
-        data: finalAuthorIds.map((authorId) => ({
-          bookId: book.id,
-          authorId,
-          schoolId: auth.schoolId,
-        })),
       });
 
       // 4. Handle initial physical copies (stock & shelf) if provided
@@ -315,10 +312,10 @@ export async function POST(request: Request) {
       }
 
       // Query final book state with relations and count
-      const createdBook = await tx.book.findFirstOrThrow({
-        where: { id: book.id, schoolId: auth.schoolId },
+      const createdBook = (await tx.book.findFirst({
+        where: { id: book.id, ...(auth.schoolId ? { schoolId: auth.schoolId } : {}) },
         select: bookSelect,
-      });
+      }))!;
 
       await tx.auditLog.create({
         data: {

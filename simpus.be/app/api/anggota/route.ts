@@ -40,10 +40,10 @@ export async function GET(request: Request) {
   if (statusResult && !statusResult.ok) return jsonError(statusResult.error, 422);
 
   const where = {
-    schoolId: auth.schoolId,
+    ...(auth.schoolId ? { schoolId: auth.schoolId } : {}),
     ...(statusResult?.ok ? { isActive: statusResult.value === "AKTIF" } : {}),
     ...(classId ? { classId } : {}),
-    ...(className && !classId ? { OR: [{ class: { name: { contains: className, mode: "insensitive" as const } } }, { className: { contains: className, mode: "insensitive" as const } }] } as unknown as Record<string, unknown> : {}),
+    ...(className ? { className: { contains: className, mode: "insensitive" as const } } : {}),
     ...(search
       ? {
           OR: [
@@ -59,14 +59,12 @@ export async function GET(request: Request) {
   try {
     const [data, total] = await prisma.$transaction([
       prisma.student.findMany({
-        where: { ...where, schoolId: auth.schoolId },
+        where,
         select: {
           id: true,
           nis: true,
           name: true,
           className: true,
-          classId: true,
-          class: { select: { id: true, name: true } },
           libraryCardNumber: true,
           phone: true,
           isActive: true,
@@ -79,7 +77,7 @@ export async function GET(request: Request) {
         skip: (page - 1) * limit,
         take: limit,
       }),
-      prisma.student.count({ where: { ...where, schoolId: auth.schoolId } }),
+      prisma.student.count({ where }),
     ]);
 
     return NextResponse.json(

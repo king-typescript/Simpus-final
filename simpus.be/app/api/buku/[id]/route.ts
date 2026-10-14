@@ -153,8 +153,8 @@ export async function PATCH(request: Request, context: Context) {
         if (resolvedIds.length) uniqueAuthors = resolvedIds;
       }
 
-      if (uniqueAuthors) {
-        await tx.bookAuthor.deleteMany({ where: { bookId: id, schoolId: auth.schoolId } });
+      if (uniqueAuthors && tx.bookAuthor) {
+        await tx.bookAuthor.deleteMany({ where: { bookId: id, ...(auth.schoolId ? { schoolId: auth.schoolId } : {}) } });
         await tx.bookAuthor.createMany({
           data: uniqueAuthors.map((authorId) => ({ bookId: id, authorId, schoolId: auth.schoolId })),
         });
