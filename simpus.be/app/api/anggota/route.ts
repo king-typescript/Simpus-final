@@ -33,6 +33,7 @@ export async function GET(request: Request) {
   if (!searchResult.ok) return jsonError(searchResult.error, 422);
   const { page, limit } = pagination.value;
   const search = searchResult.value;
+  const classId = url.searchParams.get("classId")?.trim() ?? "";
   const className = url.searchParams.get("className")?.trim() ?? "";
   const status = url.searchParams.get("status")?.trim() ?? "";
   const statusResult = status ? parseEnum(status, ["AKTIF", "NONAKTIF"] as const, "Status") : null;
@@ -41,7 +42,8 @@ export async function GET(request: Request) {
   const where = {
     schoolId: auth.schoolId,
     ...(statusResult?.ok ? { isActive: statusResult.value === "AKTIF" } : {}),
-    ...(className ? { className: { contains: className, mode: "insensitive" as const } } : {}),
+    ...(classId ? { classId } : {}),
+    ...(className && !classId ? { OR: [{ class: { name: { contains: className, mode: "insensitive" as const } } }, { className: { contains: className, mode: "insensitive" as const } }] } as unknown as Record<string, unknown> : {}),
     ...(search
       ? {
           OR: [
@@ -63,6 +65,8 @@ export async function GET(request: Request) {
           nis: true,
           name: true,
           className: true,
+          classId: true,
+          class: { select: { id: true, name: true } },
           libraryCardNumber: true,
           phone: true,
           isActive: true,

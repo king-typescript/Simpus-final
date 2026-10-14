@@ -9,6 +9,7 @@ import {
   requireSchoolContext,
 } from "@/lib/auth";
 import { getClientIp, isJsonContentType, isRecord } from "@/lib/validation";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,12 @@ function errorResponse(error: string, status: number) {
 }
 
 export async function POST(request: Request) {
+  const ip = getClientIp(request) ?? "127.0.0.1";
+  const rl = rateLimit(`change_pwd:${ip}`, 5, 60000);
+  if (!rl.success) {
+    return errorResponse("Terlalu banyak permintaan ubah password. Coba lagi nanti.", 429);
+  }
+
   const auth = await requireSchoolContext();
   if (!auth.ok) return errorResponse("Autentikasi diperlukan.", auth.status);
   if (!isJsonContentType(request)) return errorResponse("Content-Type harus application/json.", 415);

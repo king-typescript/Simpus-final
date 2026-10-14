@@ -11,6 +11,7 @@ datasource db {
 }
 
 enum UserRole {
+  SUPERADMIN
   PUSTAKAWAN
   SISWA
 }
@@ -81,7 +82,8 @@ model SchoolClass {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school   School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  students Student[]
 
   @@unique([schoolId, name])
   @@index([schoolId])
@@ -131,6 +133,7 @@ model School {
   users         User[]
   students      Student[]
   authors       Author[]
+  bookAuthors   BookAuthor[]
   categories    Category[]
   books         Book[]
   ebooks        Ebook[]
@@ -152,7 +155,8 @@ model Student {
   userId            String   @unique
   nis               String
   name              String
-  className         String
+  className         String?
+  classId           String?
   libraryCardNumber String
   phone             String?
   isActive          Boolean  @default(true)
@@ -160,8 +164,9 @@ model Student {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  school        School        @relation(fields: [schoolId], references: [id])
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school        School       @relation(fields: [schoolId], references: [id])
+  class         SchoolClass? @relation(fields: [classId], references: [id])
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   loans         Loan[]
   ebookAccesses EbookAccess[]
 
@@ -170,6 +175,7 @@ model Student {
   @@unique([schoolId, libraryCardNumber])
   @@index([schoolId])
   @@index([name])
+  @@index([classId])
   @@index([className])
   @@map("students")
 }
@@ -181,9 +187,10 @@ model Author {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  school School @relation(fields: [schoolId], references: [id])
-  books  Book[]
+  school      School       @relation(fields: [schoolId], references: [id])
+  bookAuthors BookAuthor[]
 
+  @@unique([id, schoolId])
   @@index([schoolId])
   @@index([name])
   @@map("authors")
@@ -224,19 +231,38 @@ model Book {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  school   School     @relation(fields: [schoolId], references: [id])
-  category Category   @relation(fields: [categoryId, schoolId], references: [id, schoolId])
-  authors  Author[]
-  copies   BookCopy[]
-  ebook    Ebook?
+  school      School       @relation(fields: [schoolId], references: [id])
+  category    Category     @relation(fields: [categoryId, schoolId], references: [id, schoolId])
+  bookAuthors BookAuthor[]
+  copies      BookCopy[]
+  ebook       Ebook?
 
   @@unique([schoolId, isbn])
   @@unique([id, schoolId])
   @@index([schoolId])
   @@index([title])
+  @@index([schoolId, title])
   @@index([schoolId, categoryId])
   @@index([isActive])
   @@map("books")
+}
+
+model BookAuthor {
+  bookId    String
+  authorId  String
+  schoolId  String
+  createdAt DateTime @default(now())
+
+  book   Book   @relation(fields: [bookId, schoolId], references: [id, schoolId], onDelete: Cascade)
+  author Author @relation(fields: [authorId, schoolId], references: [id, schoolId], onDelete: Cascade)
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@id([bookId, authorId])
+  @@unique([authorId, bookId, schoolId])
+  @@index([schoolId])
+  @@index([bookId])
+  @@index([authorId])
+  @@map("book_authors")
 }
 
 model Ebook {
@@ -354,6 +380,7 @@ model Loan {
   @@unique([id, schoolId])
   @@index([studentId, status])
   @@index([schoolId, status])
+  @@index([schoolId, status, dueDate])
   @@index([processedById])
   @@index([dueDate])
   @@map("loans")
@@ -443,6 +470,8 @@ model AuditLog {
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([schoolId])
+  @@index([schoolId, createdAt])
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("audit_logs")

@@ -9,8 +9,8 @@ const SESSION_TTL_SECONDS = 60 * 60 * 24;
 const AUTH_ISSUER = "simpus-satak";
 const AUTH_AUDIENCE = "simpus-satak-api";
 
-const validRoles = new Set(["PUSTAKAWAN", "SISWA"] as const);
-type UserRole = "PUSTAKAWAN" | "SISWA";
+const validRoles = new Set(["SUPERADMIN", "PUSTAKAWAN", "SISWA"] as const);
+ type UserRole = "SUPERADMIN" | "PUSTAKAWAN" | "SISWA";
 
 export type AuthTokenPayload = JWTPayload & {
   userId: string;
@@ -65,8 +65,7 @@ export async function verifyAuthToken(token: string) {
   if (
     typeof payload.userId !== "string" ||
     !payload.userId ||
-    typeof payload.schoolId !== "string" ||
-    !payload.schoolId ||
+    (payload.role !== "SUPERADMIN" && (typeof payload.schoolId !== "string" || !payload.schoolId)) ||
     typeof payload.role !== "string" ||
     !validRoles.has(payload.role as UserRole)
   ) {
@@ -118,11 +117,12 @@ async function getAuthenticatedUser() {
       select: userSelect,
     });
 
+    if (!user || user.status !== "AKTIF") {
+      return { ok: false as const, status: 401 as const };
+    }
     if (
-      !user ||
-      user.status !== "AKTIF" ||
-      !user.school.isActive ||
-      user.schoolId !== payload.schoolId
+      payload.role !== "SUPERADMIN" &&
+      (!user.school.isActive || user.schoolId !== payload.schoolId)
     ) {
       return { ok: false as const, status: 401 as const };
     }
@@ -193,6 +193,13 @@ export async function requireLibrarian() {
   return { ok: true as const, user: auth.user, schoolId: auth.user.schoolId };
 }
 
+export async function requireSuperAdmin() {
+  const auth = await requireCompletedPasswordAuth();
+  if (!auth.ok) return auth;
+  if (auth.user.role !== "SUPERADMIN") return { ok: false as const, status: 403 as const };
+  return { ok: true as const, user: auth.user, schoolId: auth.user.schoolId };
+}
+
 export const authCookieOptions = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
@@ -203,3 +210,5 @@ export const authCookieOptions = {
 
 export const clearAuthCookieOptions = { ...authCookieOptions, maxAge: 0 };
 export const noStoreHeaders = { "Cache-Control": "no-store" };
+
+export { prisma, userSelect, getTokenFromRequest };

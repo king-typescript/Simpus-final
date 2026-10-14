@@ -3,8 +3,6 @@ services:
     image: postgres:16-alpine
     container_name: simpus_postgres
     restart: unless-stopped
-    # Port 5432 sengaja tidak di-expose ke publik demi keamanan.
-    # Komunikasi database hanya dilakukan melalui jaringan internal Docker (simpus_network).
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -20,14 +18,29 @@ services:
     networks:
       - simpus_network
 
+  rustfs:
+    image: adobe/s3mock:latest
+    container_name: simpus_rustfs
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+      - "127.0.0.1:9191:9191"
+    environment:
+      - initialBuckets=bookcovers
+    networks:
+      - simpus_network
+
   app:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: simpus_app
-    command: ["pnpm", "start"]
+    command: ["./node_modules/.bin/next", "start"]
     restart: unless-stopped
-    # Hanya bind ke localhost (127.0.0.1) agar port 3000 tidak bisa diakses langsung dari publik tanpa melalui Nginx
+    volumes:
+      - ./prisma:/app/prisma:ro
+      - ./docker-entrypoint.sh:/app/docker-entrypoint.sh:ro
+      - uploads_data:/app/public/uploads
     ports:
       - "127.0.0.1:${PORT:-3000}:3000"
     env_file:
@@ -41,14 +54,27 @@ services:
       PORT: 3000
       HOSTNAME: 0.0.0.0
       RUN_MIGRATION: ${RUN_MIGRATION:-true}
+      RUSTFS_ENDPOINT: ${RUSTFS_ENDPOINT:-http://rustfs:9090}
+      RUSTFS_PUBLIC_ENDPOINT: ${RUSTFS_PUBLIC_ENDPOINT:-http://localhost:9090}
+      RUSTFS_BUCKET: ${RUSTFS_BUCKET:-bookcovers}
+      RUSTFS_REGION: ${RUSTFS_REGION:-us-east-1}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadminsecret12345}
+      RUSTFS_PRESIGNED_URL_TTL: ${RUSTFS_PRESIGNED_URL_TTL:-900}
     depends_on:
       postgres:
         condition: service_healthy
+      rustfs:
+        condition: service_started
     networks:
       - simpus_network
 
 volumes:
   postgres_data:
+    driver: local
+  uploads_data:
+    driver: local
+  rustfs_data:
     driver: local
 
 networks:

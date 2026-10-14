@@ -1,17 +1,17 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { CreateBucketCommand, DeleteObjectCommand, HeadBucketCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 
 import { getRustFsClient, getRustFsConfig } from "@/lib/rustfs";
 import { isUuid } from "@/lib/validation";
 
-export const BOOK_COVER_MAX_BYTES = 5 * 1024 * 1024;
+export const BOOK_COVER_MAX_BYTES = 10 * 1024 * 1024;
 export const BOOK_COVER_KEY_PREFIX = "book-covers";
 
 export type BookCoverImage = {
-  extension: "jpg" | "png" | "webp";
-  contentType: "image/jpeg" | "image/png" | "image/webp";
+  extension: "jpg" | "png" | "webp" | "gif" | "bmp" | "avif";
+  contentType: "image/jpeg" | "image/png" | "image/webp" | "image/gif" | "image/bmp" | "image/avif";
 };
 
 function isJpeg(bytes: Uint8Array) {
@@ -45,10 +45,33 @@ function isWebp(bytes: Uint8Array) {
     && bytes[11] === 0x50;
 }
 
+function isGif(bytes: Uint8Array) {
+  return bytes.length >= 6
+    && ( (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38)
+      || (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x39 && bytes[4] === 0x61)
+    );
+}
+
+function isBmp(bytes: Uint8Array) {
+  return bytes.length >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4d;
+}
+
+function isAvif(bytes: Uint8Array) {
+  return bytes.length >= 12
+    && bytes[4] === 0x66
+    && bytes[5] === 0x74
+    && bytes[6] === 0x79
+    && bytes[7] === 0x70
+    && (bytes[8] === 0x61 && bytes[9] === 0x76 && bytes[10] === 0x69 && bytes[11] === 0x66);
+}
+
 export function detectBookCoverImage(bytes: Uint8Array): BookCoverImage | null {
   if (isJpeg(bytes)) return { extension: "jpg", contentType: "image/jpeg" };
   if (isPng(bytes)) return { extension: "png", contentType: "image/png" };
   if (isWebp(bytes)) return { extension: "webp", contentType: "image/webp" };
+  if (isGif(bytes)) return { extension: "gif", contentType: "image/gif" };
+  if (isAvif(bytes)) return { extension: "avif", contentType: "image/avif" };
+  if (isBmp(bytes)) return { extension: "bmp", contentType: "image/bmp" };
   return null;
 }
 
@@ -57,7 +80,28 @@ function getBookCoverKey(image: BookCoverImage, schoolId: string) {
   return `schools/${schoolId}/${BOOK_COVER_KEY_PREFIX}/${randomUUID()}.${image.extension}`;
 }
 
+let bucketEnsured = false;
+
+export async function ensureBucketExists() {
+  if (bucketEnsured) return;
+  const config = getRustFsConfig();
+  const client = getRustFsClient();
+  try {
+    await client.send(new HeadBucketCommand({ Bucket: config.bucket }));
+    bucketEnsured = true;
+  } catch (err: unknown) {
+    try {
+      await client.send(new CreateBucketCommand({ Bucket: config.bucket }));
+      bucketEnsured = true;
+    } catch {
+      // Ignore if bucket already created concurrently
+      bucketEnsured = true;
+    }
+  }
+}
+
 export async function saveBookCover(bytes: Uint8Array, image: BookCoverImage, schoolId: string) {
+  await ensureBucketExists();
   const key = getBookCoverKey(image, schoolId);
   const config = getRustFsConfig();
 
@@ -77,7 +121,7 @@ export async function saveBookCover(bytes: Uint8Array, image: BookCoverImage, sc
   };
 }
 
-const bookCoverKeyPattern = /^schools\/[0-9a-f-]{36}\/book-covers\/[0-9a-f-]{36}\.(?:jpg|png|webp)$/i;
+const bookCoverKeyPattern = /^schools\/[0-9a-f-]{36}\/book-covers\/[0-9a-f-]{36}\.(?:jpg|png|webp|gif|bmp|avif)$/i;
 
 export function isBookCoverKey(value: string | null | undefined): value is string {
   return value !== null && value !== undefined && bookCoverKeyPattern.test(value);

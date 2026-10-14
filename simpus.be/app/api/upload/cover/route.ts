@@ -6,6 +6,7 @@ import {
   detectBookCoverImage,
   saveBookCover,
 } from "@/lib/book-cover-storage";
+import { getBookCoverUrl } from "@/lib/book-cover-url";
 
 export const runtime = "nodejs";
 
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
   const file = formData.get("file");
   if (!(file instanceof File)) return errorResponse("File sampul wajib diunggah.", 422);
   if (file.size <= 0) return errorResponse("File sampul kosong.", 422);
-  if (file.size > BOOK_COVER_MAX_BYTES) return errorResponse("Ukuran file sampul maksimal 5 MB.", 422);
+  if (file.size > BOOK_COVER_MAX_BYTES) return errorResponse("Ukuran file sampul maksimal 10 MB.", 422);
 
   let bytes: Uint8Array;
   try {
@@ -45,12 +46,25 @@ export async function POST(request: Request) {
   }
 
   const image = detectBookCoverImage(bytes);
-  if (!image) return errorResponse("Format file harus JPEG, PNG, atau WebP.", 422);
+  if (!image) return errorResponse("Format file gambar tidak didukung. Gunakan JPG, PNG, WebP, GIF, BMP, atau AVIF.", 422);
 
   try {
     const saved = await saveBookCover(bytes, image, auth.schoolId);
-    return NextResponse.json({ data: saved }, { status: 201, headers: noStoreHeaders });
-  } catch {
-    return errorResponse("File sampul gagal disimpan.", 500);
+    let presignedUrl: string | null = null;
+    try {
+      presignedUrl = await getBookCoverUrl(saved.key);
+    } catch (urlErr) {
+      console.warn("Gagal membuat presigned url untuk cover:", urlErr);
+    }
+
+    return NextResponse.json({
+      data: {
+        ...saved,
+        url: presignedUrl || saved.key,
+      },
+    }, { status: 201, headers: noStoreHeaders });
+  } catch (err) {
+    console.error("saveBookCover error:", err);
+    return errorResponse("File sampul gagal disimpan ke storage.", 500);
   }
 }

@@ -93,14 +93,14 @@ export default function Header() {
           ))}
         </nav>
 
-            {user ? (
-              <Link
-                to="/admin"
-                className="hidden shrink-0 items-center justify-center gap-2 rounded-[20px] bg-[#0B78E3] px-5 font-['Inter'] text-[16px] font-bold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98] lg:inline-flex lg:h-[40px]"
-              >
-                Dashboard Admin
-              </Link>
-            ) : (
+{user ? (
+                <Link
+                  to={user.role === 'SUPERADMIN' ? '/superadmin' : user.role === 'PUSTAKAWAN' ? '/admin' : '/siswa'}
+                  className="hidden shrink-0 items-center justify-center gap-2 rounded-[20px] bg-[#0B78E3] px-5 font-['Inter'] text-[16px] font-bold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98] lg:inline-flex lg:h-[40px]"
+                >
+                  {user.role === 'SUPERADMIN' ? 'Dashboard Super Admin' : user.role === 'PUSTAKAWAN' ? 'Dashboard Admin' : 'Dashboard Siswa'}
+                </Link>
+              ) : (
               <Link
                 to="/login"
                 className="hidden shrink-0 items-center justify-center gap-[15px] rounded-[20px] bg-[#0B78E3] font-['Inter'] text-[18px] font-bold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98] lg:inline-flex lg:h-[40px] lg:w-[133px]"
@@ -137,14 +137,14 @@ export default function Header() {
                 {link.label}
               </a>
             ))}
-            {user ? (
-              <Link
-                to="/admin"
-                className="mt-2 inline-flex min-h-[44px] w-full touch-manipulation items-center justify-center gap-[15px] rounded-[20px] bg-[#0B78E3] font-['Inter'] text-[18px] font-bold text-white"
-              >
-                Dashboard Admin
-              </Link>
-            ) : (
+{user ? (
+                <Link
+                  to={user.role === 'SUPERADMIN' ? '/superadmin' : user.role === 'PUSTAKAWAN' ? '/admin' : '/siswa'}
+                  className="mt-2 inline-flex min-h-[44px] w-full touch-manipulation items-center justify-center gap-[15px] rounded-[20px] bg-[#0B78E3] font-['Inter'] text-[18px] font-bold text-white"
+                >
+                  {user.role === 'SUPERADMIN' ? 'Dashboard Super Admin' : user.role === 'PUSTAKAWAN' ? 'Dashboard Admin' : 'Dashboard Siswa'}
+                </Link>
+              ) : (
               <Link
                 to="/login"
                 className="mt-2 inline-flex min-h-[44px] w-full touch-manipulation items-center justify-center gap-[15px] rounded-[20px] bg-[#0B78E3] font-['Inter'] text-[18px] font-bold text-white"

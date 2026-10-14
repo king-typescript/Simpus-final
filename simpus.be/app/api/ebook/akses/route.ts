@@ -81,9 +81,9 @@ export async function GET(request: Request) {
                 title: true,
                 isbn: true,
                 coverUrl: true,
-                authors: {
-                  select: { id: true, name: true },
-                  orderBy: { name: "asc" },
+                bookAuthors: {
+                  select: { author: { select: { id: true, name: true } } },
+                  orderBy: { author: { name: "asc" } },
                 },
               },
             },

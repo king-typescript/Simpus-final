@@ -21,7 +21,7 @@ export function MemberGridCard({ member, onEdit, onDelete, onOpenCard }) {
       <div className="grid grid-cols-2 gap-2 text-xs border-y border-slate-100 py-2.5">
         <div>
           <span className="text-slate-400">Kelas:</span>{" "}
-          <span className="font-medium text-slate-800">{member.className}</span>
+          <span className="font-medium text-slate-800">{member.class?.name || member.className || "-"}</span>
         </div>
         <div>
           <span className="text-slate-400">No HP:</span>{" "}

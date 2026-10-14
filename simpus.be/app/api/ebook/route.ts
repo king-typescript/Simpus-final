@@ -67,7 +67,7 @@ export async function GET(request: Request) {
       ...(search.value ? {
         OR: [
           { title: { contains: search.value, mode: "insensitive" as const } },
-          { authors: { some: { name: { contains: search.value, mode: "insensitive" as const } } } },
+          { bookAuthors: { some: { author: { name: { contains: search.value, mode: "insensitive" as const } } } } },
         ],
       } : {}),
     },
@@ -96,7 +96,7 @@ export async function GET(request: Request) {
             publicationYear: true,
             coverUrl: true,
             category: { select: { id: true, name: true, ddcCode: true } },
-            authors: { select: { id: true, name: true }, orderBy: { name: "asc" } },
+            bookAuthors: { select: { author: { select: { id: true, name: true } } }, orderBy: { author: { name: "asc" } } },
           },
         },
       },

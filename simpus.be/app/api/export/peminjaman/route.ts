@@ -66,7 +66,7 @@ function toCsvRows(
     item.loanStatus,
     item.student.nis,
     item.student.name,
-    item.student.className,
+    item.student.className ?? "",
     item.book.title,
     item.book.category.name,
     String(item.daysLate),

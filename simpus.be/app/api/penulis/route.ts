@@ -45,12 +45,12 @@ const authorSelect = {
   name: true,
   createdAt: true,
   updatedAt: true,
-  _count: { select: { books: { where: { isActive: true } } } },
+  _count: { select: { bookAuthors: { where: { book: { isActive: true } } } } },
 } as const;
 
-function toAuthorResponse(author: { _count: { books: number }; [key: string]: unknown }) {
+function toAuthorResponse(author: { _count: { bookAuthors: number }; [key: string]: unknown }) {
   const { _count, ...data } = author;
-  return { ...data, activeBookCount: _count.books };
+  return { ...data, activeBookCount: _count.bookAuthors };
 }
 
 export async function GET(request: Request) {

@@ -12,15 +12,16 @@ export type RateLimitKey = string | null;
  * limited by IP but the account key still applies, so lockout cannot be
  * bypassed by spoofing X-Forwarded-For.
  */
-export async function isRateLimited(keys: RateLimitKey[]): Promise<boolean> {
+export async function isRateLimited(keys: RateLimitKey[], isSuperAdmin: boolean = false): Promise<boolean> {
   const since = new Date(Date.now() - WINDOW_MS);
   const [identity, ...ips] = keys;
+  const targetAction = isSuperAdmin ? "SUPERADMIN_LOGIN_FAILED" : "LOGIN_FAILED";
   const ipList = ips.filter((ip): ip is string => ip !== null);
 
   if (ipList.length) {
     const byIp = await prisma.auditLog.count({
       where: {
-        action: "LOGIN_FAILED",
+        action: targetAction,
         entityType: { not: RATE_LIMIT_ENTITY },
         ipAddress: { in: ipList },
         createdAt: { gte: since },
@@ -32,7 +33,7 @@ export async function isRateLimited(keys: RateLimitKey[]): Promise<boolean> {
   if (!identity) return false;
   const byAccount = await prisma.auditLog.count({
     where: {
-      action: "LOGIN_FAILED",
+      action: targetAction,
       entityType: RATE_LIMIT_ENTITY,
       entityId: identity,
       createdAt: { gte: since },
@@ -42,14 +43,13 @@ export async function isRateLimited(keys: RateLimitKey[]): Promise<boolean> {
 }
 
 /** Record an account-scoped failure marker (independent of IP). */
-export async function recordAccountFailure(identity: string, ip: string | null): Promise<void> {
-  // ponytail: reuse AuditLog as the counter store; move to a dedicated table
-  // (or in-memory bucket) when login volume makes audit rows noisy.
+export async function recordAccountFailure(identity: string, ip: string | null, isSuperAdmin: boolean = false): Promise<void> {
+  const action = isSuperAdmin ? 'SUPERADMIN_LOGIN_FAILED' : 'LOGIN_FAILED';
   await prisma.auditLog.create({
     data: {
       schoolId: null,
       userId: null,
-      action: "LOGIN_FAILED",
+      action,
       entityType: RATE_LIMIT_ENTITY,
       entityId: identity,
       ipAddress: ip,

@@ -34,11 +34,11 @@ async function readJson(request: Request): Promise<{ ok: true; body: unknown } |
 
 const authorSelect = {
   id: true, name: true, createdAt: true, updatedAt: true,
-  _count: { select: { books: { where: { isActive: true } } } },
+  _count: { select: { bookAuthors: { where: { book: { isActive: true } } } } },
 } as const;
-function toAuthorResponse(author: { _count: { books: number }; [key: string]: unknown }) {
+function toAuthorResponse(author: { _count: { bookAuthors: number }; [key: string]: unknown }) {
   const { _count, ...data } = author;
-  return { ...data, activeBookCount: _count.books };
+  return { ...data, activeBookCount: _count.bookAuthors };
 }
 
 export async function GET(_request: Request, context: RouteContext) {
@@ -95,9 +95,9 @@ export async function DELETE(request: Request, context: RouteContext) {
 
   try {
     const deleted = await prisma.$transaction(async (tx) => {
-      const author = await tx.author.findUnique({ where: { id, schoolId: auth.schoolId }, select: { ...authorSelect, _count: { select: { books: true } } } });
+      const author = await tx.author.findUnique({ where: { id, schoolId: auth.schoolId }, select: { ...authorSelect, _count: { select: { bookAuthors: true } } } });
       if (!author) return false;
-      if (author._count.books > 0) throw new Error("AUTHOR_HAS_BOOKS");
+      if (author._count.bookAuthors > 0) throw new Error("AUTHOR_HAS_BOOKS");
       await tx.author.delete({ where: { id, schoolId: auth.schoolId } });
       await tx.auditLog.create({ data: { schoolId: auth.schoolId, userId: auth.user.id, action: "DELETE", entityType: "Author", entityId: id, oldData: jsonValue(author), ipAddress: getClientIp(request) } });
       return true;

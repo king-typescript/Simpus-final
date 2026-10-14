@@ -82,7 +82,7 @@ function addReportRow(
     loanStatus: sanitizeSpreadsheetText(item.loanStatus),
     nis: sanitizeSpreadsheetText(item.student.nis),
     studentName: sanitizeSpreadsheetText(item.student.name),
-    className: sanitizeSpreadsheetText(item.student.className),
+    className: sanitizeSpreadsheetText(item.student.className ?? ""),
     bookTitle: sanitizeSpreadsheetText(item.book.title),
     categoryName: sanitizeSpreadsheetText(item.book.category.name),
     daysLate: item.daysLate,

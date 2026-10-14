@@ -27,7 +27,8 @@ export async function GET() {
   const auth = await requireLibrarian();
   if (!auth.ok) return errorResponse("Tidak memiliki akses.", auth.status);
   try {
-    const settings = await prisma.librarySetting.findUnique({ where: { schoolId: auth.schoolId }, select });
+    const where = auth.schoolId ? { schoolId: auth.schoolId } : ({ key: "DEFAULT" } as unknown as { schoolId: string });
+    const settings = await prisma.librarySetting.findUnique({ where, select });
     return settings ? NextResponse.json({ data: serialize(settings) }, { headers: noStoreHeaders }) : errorResponse("Pengaturan perpustakaan belum tersedia.", 500);
   } catch { return errorResponse("Terjadi kesalahan pada server.", 500); }
 }
@@ -44,9 +45,10 @@ export async function PATCH(request: Request) {
 
   try {
     const settings = await serializable(() => prisma.$transaction(async (tx) => {
-      const current = await tx.librarySetting.findUnique({ where: { schoolId: auth.schoolId }, select });
+      const where = auth.schoolId ? { schoolId: auth.schoolId } : ({ key: "DEFAULT" } as unknown as { schoolId: string });
+      const current = await tx.librarySetting.findUnique({ where, select });
       if (!current) throw new Error("SETTINGS_NOT_FOUND");
-      const updated = await tx.librarySetting.update({ where: { schoolId: auth.schoolId }, data: { ...(maxLoanDays !== undefined ? { maxLoanDays } : {}), ...(maxActiveCopies !== undefined ? { maxActiveCopies } : {}), ...(fineRatePerDay !== undefined ? { fineRatePerDay: new Prisma.Decimal(fineRatePerDay) } : {}) }, select });
+      const updated = await tx.librarySetting.update({ where, data: { ...(maxLoanDays !== undefined ? { maxLoanDays } : {}), ...(maxActiveCopies !== undefined ? { maxActiveCopies } : {}), ...(fineRatePerDay !== undefined ? { fineRatePerDay: new Prisma.Decimal(fineRatePerDay) } : {}) }, select });
       await tx.auditLog.create({ data: { schoolId: auth.schoolId, userId: auth.user.id, action: "UPDATE", entityType: "LibrarySetting", entityId: updated.id, oldData: jsonValue(current), newData: jsonValue(updated), ipAddress: getClientIp(request) } });
       return updated;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));

@@ -1,6 +1,7 @@
 -- CreateTable
 CREATE TABLE "school_classes" (
     "id" TEXT NOT NULL,
+    "schoolId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

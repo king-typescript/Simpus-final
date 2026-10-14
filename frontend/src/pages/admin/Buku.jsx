@@ -64,7 +64,7 @@ function Buku() {
           id: b.id,
           title: b.title || "-",
           isbn: b.isbn || "-",
-          author: b.authors?.map((a) => a.name).join(", ") || "-",
+          author: b.authors?.map((a) => a.name).join(", ") || b.bookAuthors?.map((ba) => ba.author?.name).filter(Boolean).join(", ") || "-",
           publisher: b.publisher || "-",
           publicationYear: b.publicationYear || null,
           pageCount: b.pageCount || null,
@@ -115,6 +115,9 @@ function Buku() {
   }, [books, search, categoryFilter, status, typeFilter]);
 
   const openAddModal = () => {
+    // auto‑select first active category
+    const defaultCat = categories.length ? categories[0] : null;
+
     setSelectedBook(null);
     setForm({
       title: "",
@@ -123,9 +126,9 @@ function Buku() {
       publisher: "",
       publicationYear: "",
       pageCount: "",
-      category: "",
-      categoryId: "",
-      ddc: "",
+      category: defaultCat?.name || "",
+      categoryId: defaultCat?.id || "",
+      ddc: defaultCat?.ddcCode || "",
       shelf: "",
       stock: "1",
       status: "Tersedia",
@@ -138,6 +141,8 @@ function Buku() {
   };
 
   const openEditModal = (book) => {
+    const defaultCat = categories.length ? categories[0] : null;
+    const catId = book.categoryId || defaultCat?.id || "";
     setSelectedBook(book);
     setForm({
       title: book.title || "",
@@ -146,9 +151,9 @@ function Buku() {
       publisher: book.publisher === "-" ? "" : book.publisher || "",
       publicationYear: book.publicationYear || "",
       pageCount: book.pageCount || "",
-      category: book.category || "",
-      categoryId: book.categoryId || "",
-      ddc: book.ddc === "-" ? "" : book.ddc || "",
+      category: book.category || defaultCat?.name || "",
+      categoryId: catId,
+      ddc: book.ddc === "-" ? (defaultCat?.ddcCode || "") : (book.ddc || ""),
       shelf: book.shelf === "-" ? "" : book.shelf || "",
       stock: book.isEbook ? "" : String(book.stock || "1"),
       status: book.status || "Tersedia",
@@ -176,6 +181,12 @@ function Buku() {
       return;
     }
 
+    const cleanIsbn = form.isbn.trim();
+    if (!/^[0-9Xx-]{3,25}$/.test(cleanIsbn)) {
+      showError("ISBN Tidak Valid", "ISBN harus 3-25 karakter (hanya angka, tanda hubung -, atau X).");
+      return;
+    }
+
     if (!form.isEbook && form.status === "Tersedia" && Number(form.stock) <= 0) {
       showError("Stok Tidak Valid", "Buku fisik dengan status 'Tersedia' harus memiliki stok minimal 1.");
       return;
@@ -188,9 +199,12 @@ function Buku() {
         ? 0
         : Math.max(1, Number(form.stock) || 1);
 
+      const targetCategoryId = form.categoryId || (categories.length ? categories[0].id : "");
+
       const payload = {
+        ddc: form.ddc?.trim() || null,
         title: form.title.trim(),
-        isbn: form.isbn.trim(),
+        isbn: cleanIsbn,
         authorName: form.author.trim(),
         publisher: form.publisher?.trim() || null,
         publicationYear: form.publicationYear ? Number(form.publicationYear) : null,
@@ -203,8 +217,8 @@ function Buku() {
         stock: calculatedStock,
       };
 
-      if (form.categoryId) {
-        payload.categoryId = form.categoryId;
+      if (targetCategoryId) {
+        payload.categoryId = targetCategoryId;
       } else if (form.category?.trim()) {
         payload.categoryName = form.category.trim();
       }

@@ -16,6 +16,7 @@ export function BookModal({
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [previewUrl, setPreviewUrl] = useState("");
   const coverInputRef = useRef(null);
   const pdfInputRef = useRef(null);
 
@@ -24,16 +25,22 @@ export function BookModal({
     if (!file) return;
 
     if (!file.type.startsWith("image/")) {
-      setUploadError("Hanya file gambar (JPG, PNG, WebP) yang diperbolehkan.");
+      setUploadError("Hanya file gambar (JPG, PNG, WebP, GIF, BMP, AVIF) yang diperbolehkan.");
       return;
     }
 
     setUploadingCover(true);
     setUploadError("");
     try {
-      const res = await UploadService.uploadFile(file);
-      if (res.data?.data?.url) {
-        onChange({ target: { name: "coverUrl", value: res.data.data.url } });
+      const res = await UploadService.uploadCover(file);
+      const coverData = res.data?.data;
+      if (coverData?.key) {
+        // Simpan key untuk database, tapi buat preview instan jika url ada
+        onChange({ target: { name: "coverUrl", value: coverData.key } });
+        setPreviewUrl(coverData.url || coverData.key);
+      } else if (coverData?.url) {
+        onChange({ target: { name: "coverUrl", value: coverData.url } });
+        setPreviewUrl(coverData.url);
       }
     } catch (err) {
       setUploadError(err?.response?.data?.error || "Gagal mengunggah cover buku.");
@@ -340,13 +347,23 @@ export function BookModal({
             Cover Buku (Ambil Gambar dari Perangkat)
           </label>
           <div className="flex items-start gap-4">
-            {form.coverUrl ? (
+            {previewUrl || form.coverUrl ? (
               <div className="relative h-24 w-18 shrink-0 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
-                <img src={form.coverUrl} alt="Cover preview" className="h-full w-full object-cover" />
+                <img
+                  src={previewUrl || form.coverUrl}
+                  alt="Cover preview"
+                  className="h-full w-full object-cover"
+                  onError={() => {
+                    // Jika key bukan URL langsung (misal saat edit buku sebelum presign), biarkan tetap aman
+                  }}
+                />
                 <button
                   type="button"
-                  onClick={() => onChange({ target: { name: "coverUrl", value: "" } })}
-                  className="absolute top-1 right-1 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"
+                  onClick={() => {
+                    onChange({ target: { name: "coverUrl", value: "" } });
+                    setPreviewUrl("");
+                  }}
+                  className="absolute top-1 right-1 rounded-full bg-black/60 p-1 text-white hover:bg-black/80 cursor-pointer"
                   title="Hapus gambar"
                 >
                   <X size={10} />
@@ -372,20 +389,15 @@ export function BookModal({
                 className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:scale-95 shadow-xs"
               >
                 <Upload size={13} />
-                {uploadingCover ? "Mengunggah Gambar..." : "Pilih Gambar Cover"}
+                {uploadingCover ? "Mengunggah Gambar ke RustFS..." : "Pilih Gambar Cover"}
               </label>
               <p className="text-[10px] text-slate-400">
-                Mendukung format JPG, PNG, atau WebP (maks. 10MB).
+                Mendukung semua format gambar (JPG, PNG, WebP, GIF, BMP, AVIF maks. 10MB). Tersimpan aman di storage RustFS.
               </p>
               {form.coverUrl && (
-                <input
-                  type="text"
-                  name="coverUrl"
-                  value={form.coverUrl}
-                  onChange={onChange}
-                  placeholder="URL cover"
-                  className="w-full text-[11px] text-slate-400 border border-slate-100 rounded px-2 py-1 bg-slate-50"
-                />
+                <div className="text-[10px] text-slate-400 truncate max-w-sm">
+                  ID Objek: <span className="font-mono text-slate-600">{form.coverUrl}</span>
+                </div>
               )}
             </div>
           </div>

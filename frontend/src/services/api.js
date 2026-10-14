@@ -1,6 +1,15 @@
 import api, { saveAuthToken, clearAuthToken } from '../lib/api.js'
 import apiCache from '../lib/cache.js'
 
+export const PublicBookService = {
+  getSample: async (params) => {
+    return api.get('/publik/buku', { params });
+  },
+  getCategories: async () => {
+    return api.get('/publik/kategori');
+  },
+};
+
 export const BookService = {
   getPopular: async () => {
     const cacheKey = 'buku_popular'
